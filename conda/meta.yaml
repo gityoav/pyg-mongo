@@ -1,0 +1,23 @@
+package:
+    name: pyg-mongo
+    version: 0.0.5
+
+source:
+    path: ../src
+	
+build:
+    include_recipe: False
+    number: 0
+    noarch: python
+
+requirements:
+    build:
+        - pyg-base      >=0.0.3
+        - pymongo       >=3.11.0
+    run:
+        - pyg-base      >=0.0.3
+        - pymongo       >=3.11.0
+        
+about:
+    home: https://github.com/gityoav/pyg-mongo
+    license: GNU
