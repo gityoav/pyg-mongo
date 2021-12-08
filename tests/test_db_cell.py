@@ -8,17 +8,22 @@ from functools import partial
 import pytest
 
 
-def ewma(ts, n):
-    return ts.ewma(n)
+def ewma(a, n):
+    return a.ewm(n).mean()
 
-def ewmrms(ts, n):
-    return ((ts**2).ewma(n))**0.5
+def ewmrms(a, n):
+    return ewma(a**2, n)**0.5
 
 _pk = 'pk'
 updated = 'updated'
 f = add_
 
 millisec = dt.timedelta(microseconds = 1000)
+
+def v2na(a):
+    res = a.copy()
+    res[res.values == 0] = np.nan
+    return res
 
 def test_db_cell_save():
     db = partial(mongo_table, db = 'temp', table = 'temp', pk = 'key')    
@@ -39,12 +44,15 @@ def test_db_cell_save():
     assert self.updated - res.updated < millisec
     d.reset.drop()
 
+
+    
+
 def test_db_cell_save_root():
     db = partial(mongo_table, db = 'temp', table = 'temp', pk = 'key', writer = 'c:/temp/%key.parquet')    
     d = db()    
     d.reset.drop()
     a = pd.DataFrame(dict(a = [1,2,3], b= [4,5,6]), index = drange(2)); b = pd.DataFrame(np.random.normal(0,1,(3,2)), columns = ['a','b'], index = drange(2))
-    self = db_cell(presync(f), a = a, b = b, db = db, key = 'b')
+    self = db_cell(add_, a = a, b = b, db = db, key = 'b')
     self = self.go()
     res = d.inc(key = 'b')[0] - _pk
     assert eq(res - updated , self - updated )
@@ -142,16 +150,14 @@ def test_db_load():
     assert b.run()
     self = db_cell(lambda a, b: a+b, a = a, b = b, key = 'c', db = db)
     self = self()
-    GRAPH[b._address]
-    b()
-    b.load()
+    b = b()
+    b = b.load()
     assert b.load().data == 3
     assert db_cell(db = db, key = 'b').load().data == 3
     assert db_cell(db = db, key = 'wrong').load() == db_cell(db = db, key = 'wrong')
     assert db_cell(db = db, key = 'b').load(-1) == db_cell(db = db, key = 'b')
     assert db_cell(db = db, key = 'wrong').load(-1) == db_cell(db = db, key = 'wrong')
-
-
+    
     a_ = db_cell(key = 'a', db = db)
     self = b_ = db_cell(key = 'b', db = db)
     

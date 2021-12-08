@@ -115,6 +115,7 @@ def parquet_encode(value, path, compression = 'GZIP'):
 
     >>> decoded = decode(encoded)
     >>> assert eq(decoded, value)
+
     """
     if path.endswith(_parquet):
         path = path[:-len(_parquet)]
@@ -175,6 +176,13 @@ def parquet_write(doc, root = None):
     Therefore, the doc encode will cycle through the elements in the doc. Each time it sees a pd.DataFrame/pd.Series, it will 
     - determine where to write it (with the help of the doc)
     - save it to a .parquet file
+
+    >>> from pyg_base import *
+    >>> from pyg_mongo import * 
+    >>> db = mongo_table(db = 'temp', table = 'temp', pk = 'key', writer = 'c:/temp/%key.parquet')         
+    >>> a = pd.DataFrame(dict(a = [1,2,3], b= [4,5,6]), index = drange(2)); b = pd.DataFrame(np.random.normal(0,1,(3,2)), columns = ['a','b'], index = drange(2))
+    >>> doc = dict(a = a, b = b, c = add_(a,b), key = 'b')
+    >>> path ='c:/temp/%key'
 
     """
     if _root in doc:

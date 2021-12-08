@@ -4,7 +4,8 @@ import datetime
 from collections import Counter
 
 from pyg_base import is_bool, try_back, replace, alphabet, ALPHABET, is_str, \
-    as_primitive, encode, as_list, logger, tree_repr, NoneType
+    as_list, logger, tree_repr, NoneType
+from pyg_mongo._encoders import encode
 from operator import and_, or_
 from functools import reduce
 
@@ -176,7 +177,7 @@ class mkey(object):
         return _q_and([self[key] == value for key, value in kwargs.items()])
     
     def _set(self, other):
-        other = encode(as_primitive(other))
+        other = encode(other)
         return mdict({self._key : other})
     
     def __pos__(self):
@@ -198,7 +199,7 @@ class mkey(object):
     def __eq__(self, other):
         if isinstance(other, re.Pattern):
             return self._set({_regex : other.pattern})
-        other = as_primitive(other)
+        other = encode(other)
         if isinstance(other, list):
             if len(other) == 1:
                 return self._set({_eq: other[0]})

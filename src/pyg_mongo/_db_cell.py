@@ -112,34 +112,6 @@ def _load_asof(table, kwargs, deleted):
             res = history.sort('deleted')[0]
     return res
 
-async def _load_async_asof(table, kwargs, deleted):
-    t = table.inc(kwargs)
-    if await t.count() == 0:
-        raise ValueError('no cells found matching %s'%kwargs)
-    live = t(deleted = False)
-    n = await live.count()
-    if deleted in (True, None): # we just want live values
-        if n == 0:
-            raise ValueError('no undeleted cells found matching %s'%kwargs)        
-        elif n>1:
-            raise ValueError('multiple cells found matching %s'%kwargs)
-        res = await live[0]
-    else:
-        history = t(deleted = deleted) #cells alive at deleted
-        h = await history.count()
-        if h == 0:
-            if n == 0:
-                raise ValueError('no undeleted cells found matching %s'%kwargs)        
-            elif n>1:
-                raise ValueError('multiple cells found matching %s'%kwargs)
-            elif deleted is True:
-                raise ValueError('No deleted cells are avaialble but there is a live document matching %s. set delete = False to fetch it'%kwargs)
-            res = await live[0]
-        else:
-            if h > 1 and deleted is True:
-                raise ValueError('multiple historic cells are avaialble %s. set delete = DATE to find the cell on that date'%kwargs)
-            res = await history.sort('deleted')[0]
-    return res
 
 
 class db_cell(cell):
@@ -318,7 +290,7 @@ class db_cell(cell):
                 return res.load(mode[-1])
             else:
                 raise ValueError('mode can only be of the form [], [mode] or [-1, mode]')
-        db = self.db(asynch = False)
+        db = self.db(mode = 'w')
         pk = ulist(db._pk)
         missing = pk - self.keys()
         if len(missing):
