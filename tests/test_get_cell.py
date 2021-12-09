@@ -13,7 +13,7 @@ def test_that_GRAPH_gets_populated_when_cell_go():
     db = partial(mongo_table, db = 'test', table = 'test', pk = 'key')
     db().reset.drop()
     a = db_cell(add_, a = 1, b = 2, key = 'a', db = db).go()
-
+    assert a._address in get_cache('GRAPH')
 
 
 def test_get_cell():
