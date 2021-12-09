@@ -69,7 +69,7 @@ def _pkq(pk, deleted = None):
     deleted: bool/None/date
         - True (looking for deleted values)
         - False (looking for undeleted values)
-        - date (looking for deleted values that have been undeleted at the time of date)
+        - date (looking ONLY for _deleted_ values that have been undeleted at the time of date, i.e. a subset of deleted = True)
 
     :Returns:
     -------
@@ -104,7 +104,7 @@ def _pkq(pk, deleted = None):
         elif deleted is True:
             return q(q[_deleted].exists, q[_pk] == [pk])
         else:
-            deleted = dt(deleted)
+            deleted = dt(deleted) 
             return q(q[_deleted].exists, q[_deleted] > deleted,  q[_pk] == [pk])
 
 

@@ -1,10 +1,20 @@
 from pyg_base import * 
 from pyg_mongo import * 
 
-# from pyg import get_cell, get_data, mongo_table, mul_, cell, dictable, db_cell, dt, get_DAG, add_, cell_push
+from pyg_mongo import get_cell, get_data, mongo_table, db_cell, cell_push 
+from pyg_base import mul_, cell, dictable, dt, get_DAG, add_, get_cache    
+
 import pytest
 from functools import partial
-from pyg import * 
+
+
+
+def test_that_GRAPH_gets_populated_when_cell_go():
+    db = partial(mongo_table, db = 'test', table = 'test', pk = 'key')
+    db().reset.drop()
+    a = db_cell(add_, a = 1, b = 2, key = 'a', db = db).go()
+
+
 
 def test_get_cell():
     db = mongo_table(db = 'test', table = 'test')
@@ -100,12 +110,14 @@ def test_db_cell_push_pull():
 def test_db_cell_queued_push_pull():
     db = partial(mongo_table, db = 'test', table = 'test', pk = 'key')
     db().reset.drop()
-    a = db_cell(add_, a = 1, b = 2, key = 'a', db = db)(mode = -1)
-    b = db_cell(add_, a = a, b = 2, key = 'b', db = db)(mode = -1)  
-    c = db_cell(add_, a = a, b = b, key = 'c', db = db)(mode = -1)
-    d = db_cell(add_, a = c, b = b, key = 'd', db = db)(mode = -1)
-    e = db_cell(add_, a = d, b = b, key = 'e', db = db)(mode = -1)
+    a = cell(add_, a = 1, b = 2, key = 'a', db = db, pk = 'key')(mode = -1)
+    b = db_cell(add_, a = a, b = 2, key = 'b', db = db, pk = 'key')(mode = -1)  
+    c = db_cell(add_, a = a, b = b, key = 'c', db = db, pk = 'key')(mode = -1)
+    d = db_cell(add_, a = c, b = b, key = 'd', db = db, pk = 'key')(mode = -1)
+    e = db_cell(add_, a = d, b = b, key = 'e', db = db, pk = 'key')(mode = -1)
     assert get_data('test', 'test', key = 'e') == 18
+    get_cache('UPDATED')
+    
     a.a = 6
     a = a.push()
     assert get_data('test', 'test', key = 'e') == 38

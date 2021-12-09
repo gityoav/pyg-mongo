@@ -1,5 +1,5 @@
 from pyg_base import dt, eq, passthru
-from pyg import mongo_table, mongo_reader, mongo_cursor
+from pyg_mongo import mongo_table, mongo_reader, mongo_cursor
 import pytest
 import pandas as pd
 

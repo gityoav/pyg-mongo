@@ -65,7 +65,7 @@ def test_mongo_pk_cursor_multiple_keys():
     
     
 def test_mongo_table_mode():
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         mongo_table('test', 'test', mode = 'not good')
         
     r = mongo_table('test', 'test', mode = mongo_reader)
