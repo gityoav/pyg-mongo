@@ -1,4 +1,5 @@
 # pyg-mongo
+pip install from https://pypi.org/project/pyg-mongo/
 pyg-mongo introduces three new concepts that help you work with mongodb
 
 * The q query generating engine, making easy to filter mongo documents
