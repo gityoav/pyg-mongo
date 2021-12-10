@@ -1,8 +1,9 @@
-from pyg import mongo_table, dictable, Dict, mongo_pk_cursor, mongo_cursor, mongo_reader, periodic_cell, drange, pd_read_parquet, passthru, eq, dt
+from pyg_base import dictable, Dict, drange, pd_read_parquet, passthru, eq, dt
+from pyg_mongo import periodic_cell, mongo_table, mongo_pk_cursor, mongo_cursor, mongo_reader
 from functools import partial
 import pytest
 import pandas as pd
-from pyg.base._cell import _pk
+_pk = 'pk'
 
 def test_mongo_pk_cursor():
     db = partial(mongo_table, db = 'test', table = 'test', pk = ['a', 'b'])

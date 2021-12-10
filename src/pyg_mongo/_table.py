@@ -61,7 +61,7 @@ def mongo_table(table, db, pk = None, url = None, reader = None, writer = None, 
         obj = mode
         client = MongoClient
     url = _url(url)
-    c = client()[db][table]
+    c = client(url)[db][table]
     res = obj(c, pk = pk, writer = writer, reader = reader, **kwargs)
     if isinstance(res, (mongo_reader)) and len(res) == 0:
          res.create_index()
