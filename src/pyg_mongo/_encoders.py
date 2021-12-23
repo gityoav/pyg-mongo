@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from bson.objectid import ObjectId
-from pyg_base import pd_to_parquet, pd_read_parquet, is_pd, is_dict, is_series, is_arr, is_date, dt2str, mkdir, tree_items
+from pyg_base import pd_to_parquet, pd_read_parquet, pd_to_npy, np_save, pd_read_npy, is_pd, is_dict, is_series, is_arr, is_date, dt2str, mkdir, tree_items
 from pyg_base import encode as encode_
 from functools import partial
 
@@ -12,7 +12,7 @@ _csv = '.csv'
 _series = '_is_series'
 _root = 'root'
 _db = 'db'
-
+_obj = '_obj'
 
 def encode(value):
     """
@@ -99,6 +99,7 @@ def pd_read_csv(path):
 
 _pd_read_csv = encode(pd_read_csv)
 _pd_read_parquet = encode(pd_read_parquet)
+_pd_read_npy = encode(pd_read_npy)
 _np_load = encode(np.load)
 
 def parquet_encode(value, path, compression = 'GZIP'):
@@ -133,6 +134,32 @@ def parquet_encode(value, path, compression = 'GZIP'):
         return type(value)([parquet_encode(v, '%s/%i'%(path,i), compression) for i, v in enumerate(value)])
     else:
         return value
+    
+def npy_encode(value, path, append = False):
+    """
+    >>> from pyg_base import * 
+    >>> value = pd.Series([1,2,3,4], drange(-3))
+
+    """
+    if path.endswith(_npy):
+        path = path[:-len(_npy)]
+    if path.endswith('/'):
+        path = path[:-1]
+    if is_pd(value):
+        res = pd_to_npy(value, path, append = append)
+        res[_obj] = _pd_read_npy
+    elif is_arr(value):
+        fname = path + _npy 
+        np_save(fname, value, append = append)
+        return dict(_obj = _np_load, file = fname)        
+    elif is_dict(value):
+        return type(value)(**{k : npy_encode(v, '%s/%s'%(path,k), append = append) for k, v in value.items()})
+    elif isinstance(value, (list, tuple)):
+        return type(value)([npy_encode(v, '%s/%i'%(path,i), append = append) for i, v in enumerate(value)])
+    else:
+        return value
+
+    
 
 
 def csv_encode(value, path):
@@ -161,6 +188,36 @@ def csv_encode(value, path):
     else:
         return value
     
+def npy_write(doc, root = None):
+    """
+    MongoDB is great for manipulating/searching dict keys/values. 
+    However, the actual dataframes in each doc, we may want to save in a file system. 
+    - The DataFrames are stored as bytes in MongoDB anyway, so they are not searchable
+    - Storing in files allows other non-python/non-MongoDB users easier access, allowing data to be detached from app
+    - MongoDB free version has limitations on size of document
+    - file based system may be faster, especially if saved locally not over network
+    - for data licensing issues, data must not sit on servers but stored on local computer
+
+    Therefore, the doc encode will cycle through the elements in the doc. Each time it sees a pd.DataFrame/pd.Series, it will 
+    - determine where to write it (with the help of the doc)
+    - save it to a .parquet file
+
+    >>> from pyg_base import *
+    >>> from pyg_mongo import * 
+    >>> db = mongo_table(db = 'temp', table = 'temp', pk = 'key', writer = 'c:/temp/%key.npy')         
+    >>> a = pd.DataFrame(dict(a = [1,2,3], b= [4,5,6]), index = drange(2)); b = pd.DataFrame(np.random.normal(0,1,(3,2)), columns = ['a','b'], index = drange(2))
+    >>> doc = dict(a = a, b = b, c = add_(a,b), key = 'b')
+    >>> path ='c:/temp/%key'
+
+    """
+    if _root in doc:
+        root  = doc[_root]
+    if root is None and _db in doc and isinstance(doc[_db], partial) and _root in doc[_db].keywords:
+        root = doc[_db].keywords[_root]
+    if root is None:
+        return doc
+    path = root_path(doc, root)
+    return npy_encode(doc, path)
 
             
 def parquet_write(doc, root = None):

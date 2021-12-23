@@ -2,7 +2,7 @@ from pyg_base._cell import _pk
 from pyg_base import is_dict, as_list, ulist, cache, dt, is_strs, Dict
 from pyg_base import passthru, decode, is_str
 from pyg_mongo._q import q, _id, _deleted
-from pyg_mongo._encoders import csv_write, parquet_write, _csv, _parquet, encode
+from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _parquet, encode
 from functools import partial
 
 _root = 'root'
@@ -18,6 +18,8 @@ def as_reader(reader):
         return [reader]
 
 
+_writers = {_csv: csv_write , _npy: npy_write, _parquet: parquet_write}
+
 def as_writer(writer):
     if isinstance(writer, list):
         return sum([as_writer(w) for w in writer], [])
@@ -26,20 +28,14 @@ def as_writer(writer):
     elif writer is False or writer == 0:
         return [passthru]
     elif is_str(writer):
-        if writer.endswith(_csv[1:]):
-            root = writer[:-len(_csv)]
-            if root:
-                return [partial(csv_write, root = root), encode]
-            else:
-                return [csv_write, encode]
-        elif writer.endswith(_parquet[1:]):
-            root = writer[:-len(_parquet)]
-            if root:
-                return [partial(parquet_write, root = root), encode]
-            else:
-                return [parquet_write, encode]
-        else:
-            raise ValueError('We support only parquet/csv writers and writer should look like: c:/somewhere/%name/%surname.csv or d:/archive/%country/%city/results.parquet')
+        for ext, w in _writers.items():
+            if writer.endswith(ext[1:]):
+                root = writer[:-len(ext)]
+                if root:
+                    return [partial(w, root = root), encode]
+                else:
+                    return [w, encode]
+        raise ValueError('We support only csv/npy/parquet writers and writer should look like: c:/somewhere/%name/%surname.csv or d:/archive/%country/%city/results.parquet or with .npy')
     else:
         return as_list(writer)
 
