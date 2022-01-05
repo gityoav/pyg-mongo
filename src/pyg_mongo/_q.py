@@ -14,7 +14,7 @@ __all__ = ['Q','q', 'mdict']
 
 _id = '_id'
 _js = 'js'
-_regex = 'regex'
+_regex = '$regex'
 _bin = 'bin'
 _and = '$and'
 _or = '$or'
