@@ -148,6 +148,7 @@ def npy_encode(value, path, append = False):
     if is_pd(value):
         res = pd_to_npy(value, path, append = append)
         res[_obj] = _pd_read_npy
+        return res
     elif is_arr(value):
         fname = path + _npy 
         np_save(fname, value, append = append)
