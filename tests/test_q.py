@@ -1,6 +1,7 @@
-from pyg_mongo import Q, q
+from pyg_mongo import Q, q, mongo_table
 import re
 import pytest
+regex = re.compile
 
 def D(value):
     if isinstance(value, dict):
@@ -49,8 +50,9 @@ def test_q():
 
     assert D((q.a % 3 == 1) | (q.b == 2)) == {"$or": [{"a": {"$mod": [3, 1]}}, {"b": {"$eq": 2}}]}
     assert D(q['some text'] == 1) == {'some text': {'$eq': 1}}
-    assert D(q.a == re.compile('^test')) == {'a': {'regex': '^test'}}
-    assert D(q.a != re.compile('^test')) == {'a': {'$not': {'regex': '^test'}}}
+    assert D(q.a == re.compile('^test')) == {'a': {'$regex': '^test'}}
+    assert D(q.a == re.compile('^test', re.IGNORECASE)) == {"a": {"$regex": "^test", "$options": "i"}}
+    assert D(q.a != re.compile('^test')) == {'a': {'$not': {'$regex': '^test'}}}
     assert D(q.a != [1]) == {'a': {'$ne': [1]}}
     assert D(q.a == [1]) == {'a': {'$eq': 1}}
     assert D(q.a == [[1]]) == {'a': {'$eq': [1]}}
@@ -134,3 +136,15 @@ def test_q_callable():
     assert D(q(a = 1, b = 2)) == {'$and': [{'a': {'$eq': 1}}, {'b': {'$eq': 2}}]}
     assert D(q(a = 1, b = 2)) == {'$and': [{'a': {'$eq': 1}}, {'b': {'$eq': 2}}]}
     assert D(q([q.a == 1, q.b == 2])) == {'$or': [{'a': {'$eq': 1}}, {'b': {'$eq': 2}}]}
+
+
+def test_q_regex():
+    t = mongo_table('test', 'test')
+    t.drop()
+    t.insert_one(dict(item = 'Test1', value = 1))
+    t.insert_one(dict(item = 'test2', value = 2))
+    t.insert_one(dict(item = 'TEST2', value = 3))
+    assert len(t.inc(item = re.compile('^test'))) == 1
+    assert len(t.inc(item = re.compile('^test', re.IGNORECASE))) == 3
+    t.drop()
+

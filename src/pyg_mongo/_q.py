@@ -38,6 +38,7 @@ _prev = '_prev'
 _data = 'data'
 _doc = 'doc'
 _deleted = 'deleted'
+_options = '$options'
 
 
 
@@ -127,7 +128,6 @@ def _as_items(query):
     else:
         return query
 
-
 def _q_set(values):
     if len(values) > 1:
         values = _sorted(values, key = _as_items)
@@ -198,7 +198,11 @@ class mkey(object):
 
     def __eq__(self, other):
         if isinstance(other, re.Pattern):
-            return self._set({_regex : other.pattern})
+            ignorecase = other.flags % 4 == 2
+            if ignorecase:
+                return self._set({_regex : other.pattern, _options: 'i'})
+            else:                
+                return self._set({_regex : other.pattern})
         other = encode(other)
         if isinstance(other, list):
             if len(other) == 1:
