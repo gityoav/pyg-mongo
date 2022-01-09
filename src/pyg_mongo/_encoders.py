@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 from bson.objectid import ObjectId
-from pyg_base import pd_to_parquet, pd_read_parquet, pd_to_npy, np_save, pd_read_npy, is_pd, is_dict, is_series, is_arr, is_date, dt2str, mkdir, tree_items
+from pyg_base import pd_to_parquet, pd_read_parquet, is_pd, is_dict, is_series, is_arr, is_date, dt2str, tree_items
+from pyg_npy import pd_to_npy, np_save, pd_read_npy, mkdir
 from pyg_base import encode as encode_
 from functools import partial
 
