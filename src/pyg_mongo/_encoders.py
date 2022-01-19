@@ -142,17 +142,18 @@ def npy_encode(value, path, append = False):
     >>> value = pd.Series([1,2,3,4], drange(-3))
 
     """
+    mode = 'a' if append else 'w'
     if path.endswith(_npy):
         path = path[:-len(_npy)]
     if path.endswith('/'):
         path = path[:-1]
     if is_pd(value):
-        res = pd_to_npy(value, path, append = append)
+        res = pd_to_npy(value, path, mode = mode)
         res[_obj] = _pd_read_npy
         return res
     elif is_arr(value):
         fname = path + _npy 
-        np_save(fname, value, append = append)
+        np_save(fname, value, mode = mode)
         return dict(_obj = _np_load, file = fname)        
     elif is_dict(value):
         return type(value)(**{k : npy_encode(v, '%s/%s'%(path,k), append = append) for k, v in value.items()})
