@@ -38,7 +38,7 @@ def test_get_cell_with_version_control():
     db().reset.drop()
     d = (dictable(a = [1,2,3]) * dict(b = [1,2,3]))
     c = db_cell(function = mul_, db = db)
-    _ = d[lambda a, b: c(a = a, b = b)()]
+    _ = d[lambda a, b: c(a = a, b = b)(1)]
     t = dt()
 
     assert get_cell('test','test', a = 1, b = 1).data == 1
@@ -52,8 +52,7 @@ def test_get_cell_with_version_control():
     db().drop()
     with pytest.raises(ValueError):
         load_cell('test','test', a = 1, b = 1)
-
-    assert get_cell('test','test', a = 1, b = 1, deleted = t).data == 1
+    assert load_cell('test','test', a = 1, b = 1, deleted = t).data == 1
     db().reset.drop()
 
 

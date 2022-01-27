@@ -6,6 +6,7 @@ from pyg_mongo import *
 from operator import add
 from functools import partial
 import pytest
+_updated = 'updated'
 
 
 def ewma(a, n):
@@ -100,14 +101,15 @@ def test_db_cell_clear():
     db = partial(mongo_table, db = 'temp', table = 'temp', pk = 'key')    
     d = db()    
     d.reset.drop()
-    a = db_cell(lambda a, b: a+b, a = 1, b = 2, key = 'a', db = db)
-    b = db_cell(lambda a, b: a+b, a = 1, b = 2, key = 'b', db = db)
-    c = db_cell(lambda a, b: a+b, a = a, b = b, key = 'c', db = db)
+    f = lambda a, b: a+b
+    a = db_cell(f, a = 1, b = 2, key = 'a', db = db)
+    b = db_cell(f, a = 1, b = 2, key = 'b', db = db)
+    c = db_cell(f, a = a, b = b, key = 'c', db = db)
     c = c()
     
-    assert cell_clear(a) == db_cell(db = db, key = 'a')
-    assert cell_clear(b) == db_cell(db = db, key = 'b')
-    assert cell_clear(c) == db_cell(db = db, key = 'c')
+    assert cell_clear(a) - _updated == db_cell(f, db = db, key = 'a')
+    assert cell_clear(b) - _updated == db_cell(f, db = db, key = 'b')
+    assert cell_clear(c) - _updated == db_cell(f, db = db, key = 'c')
     assert cell_clear([a,b,c]) == [cell_clear(a), cell_clear(b), cell_clear(c)]
     assert cell_clear((a,b,c)) == (cell_clear(a), cell_clear(b), cell_clear(c))
     assert cell_clear(dict(a=a,b=b,c=c)) == dict(a=cell_clear(a), b=cell_clear(b), c=cell_clear(c))

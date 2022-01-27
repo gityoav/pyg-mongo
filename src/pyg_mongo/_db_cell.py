@@ -9,6 +9,7 @@ from functools import partial
 _pk = 'pk'
 _db = 'db'
 _updated = 'updated'
+_function = 'function'
 
 __all__ = ['db_load', 'db_save', 'db_cell', 'cell_push', 'cell_pull', 'get_cell', 'load_cell', 'get_data', 'load_data']
 
@@ -218,7 +219,7 @@ class db_cell(cell):
         if self.get(_db) is None: 
             return super(db_cell, self)._clear()
         else:
-            return self[[_db, _updated] + self.db().pk] if _updated in self else self[[_db] + self.db().pk]
+            return self[[_db, _function, _updated] + self.db().pk] if _updated in self else self[[_db, _function] + self.db().pk]
 
     def save(self):
         if self.get(_db) is None:
@@ -295,29 +296,32 @@ class db_cell(cell):
             return self            
         address = self._address
         kwargs = {k : self[k] for k in pk}
-        GRAPH = get_GRAPH()
+        graph = get_GRAPH()
         if mode == -1:
-            if address in GRAPH:
-                del GRAPH[address]
+            if address in graph:
+                del graph[address]
             return self
-        if address not in GRAPH: # we load from the database
+        if address not in graph: # we load from the database
             if is_date(mode):
-                GRAPH[address] = _load_asof(db.reset, kwargs, deleted = mode)
+                graph[address] = _load_asof(db.reset, kwargs, deleted = mode)
             else:
                 try:
-                    GRAPH[address] = db[kwargs]
+                    graph[address] = db[kwargs]
                 except Exception:
                     if mode in (1, True):
                         raise ValueError('no cells found matching %s'%kwargs)
                     else:
                         return self         
-        if address in GRAPH:
-            saved = GRAPH[address]
-            saved_updated = saved.get(_updated)
+        if address in graph:
+            saved = graph[address] 
             self_updated = self.get(_updated)
-            if is_date(saved_updated) and (self_updated is None or self_updated < saved_updated):
-                output = {key: value for key, value in saved.items() if (key in [_updated] + self._output and value is not None) or key not in self}
-                self.update(output)
+            saved_updated = saved.get(_updated)
+            if self_updated is None or (saved_updated is not None and saved_updated > self_updated):
+                excluded_keys = (self /  None).keys() - self._output - _updated
+            else:
+                excluded_keys = (self /  None).keys()
+            update = (saved / None) - excluded_keys
+            self.update(update)
         return self        
 
     def push(self):        
