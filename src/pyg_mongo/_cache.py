@@ -1,7 +1,10 @@
-from pyg_base import wrapper, getargs, as_list, getcallargs, cell_item
+from pyg_base import wrapper, getargs, as_list, getcallargs, cell_item, logger
 from pyg_mongo._table import mongo_table
+from pyg_mongo._encoders import root_path
 from pyg_mongo._periodic_cell import periodic_cell
 from functools import partial
+import pandas as pd
+from pyg_npy import pd_read_npy
 
 class cell_cache(wrapper):
     """
@@ -39,6 +42,9 @@ class cell_cache(wrapper):
 
     cell_kwargs: dict
         parameters for the cell determining its operation, e.g. for periodic_cell, the periodicity
+        
+    external:
+        list of parameters that are part of the primary keys but are not part of the function args
 
     :Example:
     ---------
@@ -64,6 +70,8 @@ class cell_cache(wrapper):
     def __init__(self, function = None, db = 'cache', table = None, pk = None, cell = periodic_cell, cell_kwargs = None, external = None):
         cell_kwargs  = cell_kwargs or {}
         super(cell_cache, self).__init__(function = function, pk = pk, db = db, table = table, cell = cell, cell_kwargs = cell_kwargs, external = external)
+        if hasattr(function, 'output'):
+            self.output = function.output
 
     @property
     def _pk(self):
@@ -90,21 +98,33 @@ class cell_cache(wrapper):
     def _db(self):
         return partial(mongo_table, table = self._table, db = self.db, pk = self._pk)
     
-    def wrapped(self, *args, **kwargs):
-        go = kwargs.pop('go',0)
-        mode = kwargs.pop('mode',0)
+    def _external_kwargs(self, args, kwargs):
         external = self._external
         external_kwargs = {key : value for key, value in kwargs.items() if key in external}
         kwargs = {key : value for key, value in kwargs.items() if key not in external}
-        callargs = getcallargs(self.function, *args, **kwargs)
-        db = self._db
         external_kwargs.update(self.cell_kwargs)
-        external_kwargs.update(callargs)
-        return self.cell(self.function, db = db, **external_kwargs)(go = go, mode = mode)
+        external_kwargs.update(kwargs)
+        if args:
+            callargs = getcallargs(self.function, *args, **kwargs)
+            external_kwargs.update(callargs)
+        return external_kwargs
+    
+    def wrapped(self, *args, **kwargs):
+        db = self._db
+        go = kwargs.pop('go',0)
+        mode = kwargs.pop('mode',0)
+        external_kwargs = self._external_kwargs(args, kwargs)
+        res = self.cell(self.function, db = db, **external_kwargs).load(mode = mode)
+        try:
+            res = res.go(go = go)
+        except Exception:
+            logger.warning('Unable to run cell, returning cached data')
+        return res
 
 class db_cache(cell_cache):
     def wrapped(self, *args, **kwargs):
-        return cell_item(super(db_cache, self).wrapped(*args, **kwargs))
-    
+        res = super(db_cache, self).wrapped(*args, **kwargs)
+        return cell_item(res)
+            
 
 
