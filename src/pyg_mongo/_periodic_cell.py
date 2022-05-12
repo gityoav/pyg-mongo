@@ -1,4 +1,4 @@
-from pyg_base import dt, dt_bump, calendar, cfg_read
+from pyg_base import dt, dt_bump, calendar, cfg_read, is_date
 from pyg_mongo._db_cell import db_cell, _updated
 
 __all__ = ['periodic_cell']
@@ -43,13 +43,16 @@ class periodic_cell(db_cell):
         time = dt()
         updated = self.get(_updated)
         # if self[_updated] is None or dt_bump(self[_updated], self[_period]) < time:
-        if end_date is not None and time > dt(end_date, 1) and updated is not None and dt_bump(updated, self[_period]) >= end_date: ## we expired and last ran near expiry
+        if is_date(end_date) and time > dt(end_date, 1) and updated is not None and dt_bump(updated, self[_period]) >= end_date: ## we expired and last ran near expiry
             return super(periodic_cell, self).run() 
+        elif updated is None:
+            return True
         else:
             cal = calendar(self.get('calendar'))
+            next_update = cal.dt_bump(updated, self.period)
             day_start = self.get('day_start', _day_start)
             day_end = self.get('day_end', _day_end)                            
-            if self[_updated] is None or cal.trade_date(time, 'f', day_start, day_end) > cal.trade_date(self[_updated], 'f', day_start, day_end):
+            if cal.trade_date(time, 'p', day_start, day_end) >= cal.trade_date(next_update, 'f', day_start, day_end):
                 return True
             else:
                 return super(periodic_cell, self).run() 
