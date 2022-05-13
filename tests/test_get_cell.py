@@ -58,7 +58,7 @@ def test_get_cell_with_version_control():
 
 def test_get_cell_fail_on_history():
     db = mongo_table(db = 'test', table = 'test')
-    db.drop()
+    db.reset.drop()
     db.insert_one(dict(a = 1, deleted = dt(2000)))
     with pytest.raises(ValueError):
         get_cell('test', 'test', a = 1, deleted = dt(2001))

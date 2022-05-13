@@ -1,6 +1,6 @@
 from pyg_base import cell, is_date, ulist, logger, cell_clear, as_list, get_DAG, get_GAD, get_cache, descendants
 from pyg_base import cell_item, Dict
-from pyg_mongo._q import _id, _deleted
+from pyg_mongo._q import _id, _deleted, q
 from pyg_mongo._table import mongo_table
 from functools import partial
 
@@ -82,35 +82,41 @@ def db_load(value, mode = 0):
     else:
         return value
     
-def _load_asof(table, kwargs, deleted):
+def _load_asof(table, kwargs, deleted):    
     t = table.inc(kwargs)
-    if t.count() == 0:
-        raise ValueError('no cells found matching %s'%kwargs)
-    live = t(deleted = False)
-    n = live.count()
-    if deleted in (True, None): # we just want live values
-        if n == 0:
+    live = t.inc(-q.deleted)
+    l = live.count()
+    if deleted in (False, None): # we just want live values
+        if l == 0:
             raise ValueError('no undeleted cells found matching %s'%kwargs)        
-        elif n>1:
+        elif l>1:
             raise ValueError('multiple cells found matching %s'%kwargs)
-        res = live[0]
-    else:
-        history = t(deleted = deleted) #cells alive at deleted
-        h = history.count()
-        if h == 0:
-            if n == 0:
-                raise ValueError('no undeleted cells found matching %s'%kwargs)        
-            elif n>1:
-                raise ValueError('multiple cells found matching %s'%kwargs)
-            elif deleted is True:
-                raise ValueError('No deleted cells are avaialble but there is a live document matching %s. set delete = False to fetch it'%kwargs)
-            res = live[0]
-        else:
-            if h > 1 and deleted is True:
-                raise ValueError('multiple historic cells are avaialble %s. set delete = DATE to find the cell on that date'%kwargs)
-            res = history.sort('deleted')[0]
-    return res
-
+        return live[0]
+    else:        
+        past = t.inc(+q.deleted) if deleted is True else t.inc(+q.deleted, q.deleted > deleted) ## it is possible to have cells with deleted in self
+        p = past.count()
+        if p == 1:
+            return past[0]
+        elif p > 1:
+            if deleted is True:
+                raise ValueError('multiple historic cells are avaialble %s with these dates: %s. set delete = DATE to find the cell on that date'%(kwargs, past.deleted))
+            else:
+                return past.sort('deleted')[0]
+        else:    ## no records found in past, we go to the deleted history
+            history = t.deleted if deleted is True else t.deleted.inc(q.deleted > deleted) #cells deleted after deleted date
+            h = history.count()
+            if h == 0:
+                if l > 0:
+                    raise ValueError('no deleted cells found matching %s but a live one exists. Set deleted = False to get it'%kwargs)        
+                else:                   
+                    raise ValueError('no deleted cells found matching %s'%kwargs)        
+            elif h>1:
+                if deleted is True:
+                    raise ValueError('multiple historic cells are avaialble %s with these dates: %s. set delete = DATE to find the cell on that date'%(kwargs, history.deleted))
+                else:
+                    return history.sort('deleted')[0]
+            else:
+                return history[0]
 
 
 class db_cell(cell):
@@ -282,8 +288,10 @@ class db_cell(cell):
             return super(db_cell, self).load(mode = mode)
         if isinstance(mode, (list, tuple)):
             if len(mode) == 0:
-                mode = [0]
-            if len(mode) == 1 or (len(mode)==2 and mode[0] == -1):
+                return self.load()
+            if len(mode) == 1:
+                return self.load(mode[0])
+            if len(mode) == 2 and mode[0] == -1:
                 res = self.load(-1)
                 return res.load(mode[-1])
             else:
@@ -303,10 +311,10 @@ class db_cell(cell):
             return self
         if address not in graph: # we load from the database
             if is_date(mode):
-                graph[address] = _load_asof(db.reset, kwargs, deleted = mode)
+                graph[address] = _load_asof(db, kwargs, deleted = mode)
             else:
                 try:
-                    graph[address] = db[kwargs]
+                    graph[address] = _load_asof(db, kwargs, deleted = False)
                 except Exception:
                     if mode in (1, True):
                         raise ValueError('no cells found matching %s'%kwargs)
@@ -320,6 +328,8 @@ class db_cell(cell):
                 excluded_keys = (self /  None).keys() - self._output - _updated
             else:
                 excluded_keys = (self /  None).keys()
+            if is_date(mode):
+                excluded_keys += [_id]
             update = (saved / None) - excluded_keys
             self.update(update)
         return self        

@@ -35,12 +35,12 @@ def test_mongo_pk_cursor():
     doc = dict(key = 1, data = 2)
     self.update_one(doc)
     assert len(self) == 1
-    assert len(t) == 2
+    assert len(t.deleted) == 1
 
     doc = dict(key = 1, other_data = 3)
     self.update_one(doc)
     assert len(self) == 1
-    assert len(t) == 3
+    assert len(t.deleted) == 2
     
     assert self[dict(key=1)]['other_data'] == 3
     assert self[dict(key=1)]['data'] == 2

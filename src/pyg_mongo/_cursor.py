@@ -1,9 +1,9 @@
 
 from pyg_base import logger, passthru, tree_update, dictable
 from pyg_base import zipper, is_strs, is_dict, Dict, is_dictable, is_int, as_list, ulist
-from pyg_mongo._q import _set, _id, _unset, _rename, _deleted, _data
+from pyg_mongo._q import q, _set, _id, _unset, _rename, _deleted, _data
 from pyg_mongo._reader import mongo_reader
-from pyg_mongo._base_reader import _pk, _items1, _dict1
+from pyg_mongo._base_reader import _pk, _dict1
 import datetime
 
 
@@ -117,7 +117,7 @@ class mongo_cursor(mongo_reader):
         target = self.inc(*args, **kwargs)
         n = target.count()
         spec = target._spec
-        logger.info('INFO: deleting %i documents based on %s'%(n, spec))
+        logger.info('INFO: deleting %i documents from %s.%s based on %s'%(n, self.collection.database.name, self.collection.name, spec))
         if n:
             target.collection.delete_many(spec)
         return self
@@ -141,7 +141,16 @@ class mongo_cursor(mongo_reader):
         c.collection.delete_one(c._spec)
         return self
 
-    drop = delete_many
+    def drop(self, *args, **kwargs):
+        res = self.delete_many(*args, **kwargs)
+        if not self._is_deleted():
+            target = self.deleted.inc(*args, **kwargs)
+            n = target.count()
+            if n:
+                spec = target._spec
+                logger.info('INFO: deleting %i documents from %s.%s based on %s'%(n, target.collection.database.name, target.collection.name, spec))
+                target.collection.delete_many(spec)
+        return res
     
     def _update_one(self, doc):
         """
@@ -384,9 +393,15 @@ class mongo_pk_cursor(mongo_cursor):
         return self.find_one(doc).delete_many()
     
     def delete_many(self):
-        self.collection.update_many(self._spec, {_set: {_deleted : datetime.datetime.now()}})
-        return self
-
+        n = len(self)
+        if n>0 and not self._is_deleted():
+            self.collection.update_many(q(self._spec, q.deleted.not_exists), {_set : dict(deleted = datetime.datetime.now())})
+            docs = [doc for doc in self.collection.find(self._spec)]
+            ids = [doc[_id] for doc in docs]
+            self.deleted.collection.delete_many(q(_id = ids))
+            self.deleted.collection.insert_many(docs)
+        return super(mongo_pk_cursor, self).delete_many()
+    
     drop = delete_many
 
     @property
@@ -424,16 +439,17 @@ class mongo_pk_cursor(mongo_cursor):
             c.collection.update_one({_id : i}, {_unset: unset})
             c.collection.update_one({_id : i}, {_set: new})
             new[_id] = i
-            old[_deleted] = datetime.datetime.now()
-            self.collection.insert_one(old)
+            if not self._is_deleted():
+                old[_deleted] = datetime.datetime.now()
+                self.deleted.collection.insert_one(old)
         else:
             missing_keys = [key for key in self._pk if key not in doc]
             if len(missing_keys)>0:
                 raise ValueError('cannot save a new doc with primary keys %s missing'%missing_keys)
             new[_id] = self.collection.insert_one(new).inserted_id
         return new[_id]
-    
-    
+
+        
     def _update_one(self, new):
         """
         receives a doc, returns updated doc
@@ -448,8 +464,9 @@ class mongo_pk_cursor(mongo_cursor):
             self.collection.update_one({_id : i}, {_unset: unset})
             self.collection.update_one({_id : i}, {_set: new})            
             new[_id] = i
-            old[_deleted] = datetime.datetime.now()
-            self.collection.insert_one(old)
+            if not self._is_deleted():
+                old[_deleted] = datetime.datetime.now()
+                self.deleted.collection.insert_one(old)
         return new
     
     def update_one(self, doc, upsert = True):
@@ -547,3 +564,4 @@ class mongo_pk_cursor(mongo_cursor):
         return mongo_cursor(self.collection, writer = self.writer, reader = self.reader)
 
                     
+

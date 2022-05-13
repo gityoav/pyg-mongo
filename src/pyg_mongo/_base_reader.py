@@ -1,7 +1,7 @@
 from pyg_base._cell import _pk
-from pyg_base import is_dict, as_list, ulist, cache, dt, is_strs, Dict
+from pyg_base import is_dict, as_list, ulist, cache, dt, is_strs, Dict, sort
 from pyg_base import passthru, decode, is_str
-from pyg_mongo._q import q, _id, _deleted
+from pyg_mongo._q import q, _id
 from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _parquet, encode
 from functools import partial
 
@@ -51,9 +51,9 @@ def _items1(keys):
 
 
 @cache
-def _pkq(pk, deleted = None):
+def _pkq(pk):
     """
-    Returns a query based on pk and deleted of the cursor. 
+    Returns a query based on pk.
     Note that these are designed to integrate with cells and how they are saved in the database
     
     
@@ -62,11 +62,6 @@ def _pkq(pk, deleted = None):
     pk : list 
         list of primary keys
         
-    deleted: bool/None/date
-        - True (looking for deleted values)
-        - False (looking for undeleted values)
-        - date (looking ONLY for _deleted_ values that have been undeleted at the time of date, i.e. a subset of deleted = True)
-
     :Returns:
     -------
     dict 
@@ -76,36 +71,16 @@ def _pkq(pk, deleted = None):
     ----------
     >>> import datetime
     >>> assert _pkq(None) == {}
-    >>> assert _pkq(None, False) == {"deleted": {"$exists": False}}
-    >>> assert _pkq(None, True) == {"deleted": {"$exists": True}}
-    >>> assert dict(_pkq(None, 2020)) == {'$or': [{"deleted": {"$exists": False}}, {"deleted": {"$gt": datetime.datetime(2020, 1, 1, 0, 0)}}]}
-
-    >>> assert dict(_pkq(['world', 'hello'])) == {'$and': [{"_pk": {"$eq": ["hello", "world"]}},  {"deleted": {"$exists": False}}]}
-    >>> assert dict(_pkq('hello')) == {'$and': [{"_pk": {"$eq": ["hello"]}},  {"deleted": {"$exists": False}}]}
+    >>> assert dict(_pkq(['world', 'hello'])) == {"_pk": {"$eq": ["hello", "world"]}}
 
     """
     if pk is None or len(pk) == 0:
-        if deleted is None:
-            return {}
-        elif deleted is True:
-            return q[_deleted].exists
-        elif deleted is False:
-            return q[_deleted].not_exists
-        else:
-            deleted = dt(deleted)
-            return q(q[_deleted].exists, q[_deleted] > deleted)
+        return {}
     else:
-        if deleted in (None, False):
-            return q(q[_deleted].not_exists, q[_pk] == [pk])
-        elif deleted is True:
-            return q(q[_deleted].exists, q[_pk] == [pk])
-        else:
-            deleted = dt(deleted) 
-            return q(q[_deleted].exists, q[_deleted] > deleted,  q[_pk] == [pk])
+        return q[_pk] == [pk]
 
-
-_empty_crsr = Dict(collection = None, spec = None, projection = None, sorter = None, reader = None, writer = None, pk = None, deleted = None)
-_attrs = ['collection', 'projection', 'sorter', 'reader', 'writer', 'pk', 'deleted']
+_empty_crsr = Dict(collection = None, spec = None, projection = None, sorter = None, reader = None, writer = None, pk = None)
+_attrs = ['collection', 'projection', 'sorter', 'reader', 'writer', 'pk']
 
 class mongo_base_reader(object):
     """
@@ -123,7 +98,7 @@ class mongo_base_reader(object):
                      
                 
     """
-    def __init__(self, collection, spec = None, projection = None, sorter = None, reader = None, writer = None, pk = None, deleted = None):
+    def __init__(self, collection, spec = None, projection = None, sorter = None, reader = None, writer = None, pk = None):
         if isinstance(collection, mongo_base_reader):
             crsr = collection
             collection = crsr.collection
@@ -136,7 +111,6 @@ class mongo_base_reader(object):
         self.reader  = crsr.reader  if reader   is None else reader
         self.writer  = crsr.writer  if writer   is None else writer 
         self.pk      = crsr.pk      if pk       is None else pk
-        self.deleted = crsr.deleted if deleted  is None else deleted
         self.pk = self._pk
 
     def _callargs(self, **kwargs):
@@ -195,7 +169,7 @@ class mongo_base_reader(object):
 
     @property
     def _spec(self):
-        return q(self.spec, _pkq(self._pk, self.deleted))
+        return q(self.spec, _pkq(self._pk))
 
     @property
     def _projection(self):
@@ -208,7 +182,30 @@ class mongo_base_reader(object):
     @property
     def _pk(self):
         return ulist(sorted(set(as_list(self.pk))))
-    
+
+    def distinct(self, key):
+        """
+        returns the distinct cursor values of the key        
+        """
+        res = self.cursor.distinct(key)
+        try:
+            return sort(res)
+        except TypeError:
+            return res
+
+    def _is_deleted(self):
+        return self.collection.database.name.startswith('deleted_')
+
+    @property
+    def deleted(self):
+        if self._is_deleted():
+            return self.distinct('deleted')
+        collection_name = self.collection.name
+        db = self.collection.database
+        db_name = db.name
+        collection = db.client['deleted_' + db_name][collection_name]
+        return type(self)(collection, spec = self.spec, projection = self.projection, sorter = self.sorter, reader = self.reader, writer = self.writer, pk = self.pk) 
+
     @property
     def cursor(self):
         res = self.collection.find(self._spec, self._projection)
@@ -269,7 +266,7 @@ class mongo_base_reader(object):
             return q[_id] == decode(doc[_id])
         elif self.pk:
             pk = self._pk
-            return q(q[_deleted].not_exists, q[_pk] == [pk], **{key : doc[key] for key in pk if key in doc})
+            return q(q[_pk] == [pk], **{key : doc[key] for key in pk if key in doc})
         else:
             return doc
 

@@ -7,6 +7,8 @@ from operator import add
 from functools import partial
 import pytest
 _updated = 'updated'
+_id = '_id'
+import datetime
 
 
 def ewma(a, n):
@@ -213,6 +215,8 @@ def test_db_cell_bare():
     c = db_cell(data = 1)    
     d = db_cell(lambda x: x+1, x = c, db = db, key = 'key')
     d = d()
+    db().collection.count_documents({})
+    db()[0]
     assert db().inc(key = 'key')[0].x - updated == c - updated
     c = db_cell(add1, x = 3)()
     assert cell_clear(c) == c- 'data'
@@ -254,9 +258,13 @@ def test_db_cell_point_in_time():
     y0 = db_cell(add_, a = x0, b = 2, key = 'y', db = db).go()
     z0 = db_cell(add_, a = x0, b = y0, key = 'z', db = db).go()
 
+    self = db()
+
     ## now delete
-    db().reset.inc(q.deleted.not_exists).set(deleted = dt(2000))
+    db().drop()
+    db().deleted.set(deleted = dt(2000))
     assert len(db()) == 0
+    assert len(db().deleted) == 3
 
     ## now try and grab...
     with pytest.raises(ValueError):
@@ -271,9 +279,10 @@ def test_db_cell_point_in_time():
     x1 = db_cell(add_, a = 10, b = 20, key = 'x', db = db)(mode = -1)
     y1 = db_cell(add_, a = x1, b = 20, key = 'y', db = db)(mode = -1)
     z1 = db_cell(add_, a = x1, b = y1, key = 'z', db = db)(mode = -1)
-    
-    db().reset.inc(q.deleted.not_exists).set(deleted = dt(2002))
 
+    db().reset.set(deleted = dt(2002))
+    db().drop()
+    assert db().deleted.deleted == [dt(2000), dt(2002)]
     assert get_cell('test', 'test', key = 'z', deleted = dt(1999)).data == 8
     assert get_cell('test', 'test', key = 'z', deleted = dt(2001)).data == 80
 
@@ -285,25 +294,43 @@ def test_db_cell_point_in_time():
     assert get_cell('test', 'test', key = 'z', deleted = dt(2001)).data == 80
     assert get_cell('test', 'test', key = 'z').data == 800
 
-    
+    self = db_cell(db = db, key = 'z').load(-1)
+    assert not z2._address in get_cache()['GRAPH']
     assert db_cell(db = db, key = 'z').load(-1).load(mode = dt(1999)).data == 8
-    assert db_cell(db = db, key = 'z').load(mode = [dt(2001)]).data == 80
-    assert db_cell(db = db, key = 'z').load(mode = [0]).data == 800
-    assert db_cell(db = db, key = 'z').load(mode = []).data == 800
+    assert db_cell(db = db, key = 'z').load(mode = [-1, dt(2001)]).data == 80
+    assert db_cell(db = db, key = 'z').load(mode = [-1, 0]).data == 800
+    assert db_cell(db = db, key = 'z').load().data == 800
 
     t0 = dt() ### This will be useful shortly...
 
-    full_recalc_using_1999_data = db_cell(db = db, key = 'z')(go=-1, mode = [dt(1999)])
+    assert len(db().inc(key = 'z')) == 1
+    self = db_cell(db = db, key = 'z').load(mode = [-1, dt(1999)])
+    self = self._go(-1, -1)
+    assert len(db().inc(key = 'z')) == 1
+
+    kwargs = {}; go=-1; mode = [-1, dt(1999)]; _db = 'db'; UPDATED = get_cache()['UPDATED']; upsert = True; _deleted = 'deleted'
+    db().inc(key = 'z')
+    self = db_cell(db = db, key = 'z').load(mode)
+    assert len(db().inc(key = 'z')) == 1
+    self = self.go(go, mode)
+    assert len(db().inc(key = 'z')) == 1
+
+    full_recalc_using_1999_data = db_cell(db = db, key = 'z')(go=-1, mode = [-1, dt(1999)])
+    print('address in graph 1999', get_cache()['GRAPH'][z2._address].data)
     assert full_recalc_using_1999_data.data == 8
 
-    full_recalc_using_2001_data = db_cell(db = db, key = 'z')(go=-1, mode = [dt(2001)])
+    full_recalc_using_2001_data = db_cell(db = db, key = 'z')(go=-1, mode = [-1, dt(2001)])
+    print('address in graph 2001', get_cache()['GRAPH'][z2._address].data)
     assert full_recalc_using_2001_data.data == 80
     
+    self =  db_cell(db = db, key = 'z')
+    self = self.load()    
+    
     ## Be aware, now that we fully recalculated, the current value IS the same as the values in 2001    
-    full_recalc_using_live_data = db_cell(db = db, key = 'z')(go=-1, mode = [0])
+    full_recalc_using_live_data = db_cell(db = db, key = 'z')(go=-1, mode = [-1, 0])
     assert full_recalc_using_live_data.data == 80
     
-    full_recalc_using_live_data_before_we_messed_with_it = db_cell(db = db, key = 'z')(go=-1, mode = [t0])
+    full_recalc_using_live_data_before_we_messed_with_it = db_cell(db = db, key = 'z')(go=-1, mode = [-1, t0])
     assert full_recalc_using_live_data_before_we_messed_with_it.data == 800    
     db().reset.drop()    
     

@@ -1,5 +1,5 @@
 from pyg_base import as_list, is_strs, is_str, is_dict, is_int, dictable, sort, passthru
-from pyg_mongo._q import _id, _doc, q, _set, _deleted
+from pyg_mongo._q import _id, _doc, q, _set
 from pyg_mongo._base_reader import mongo_base_reader, _items1
 import datetime
 
@@ -88,17 +88,6 @@ class mongo_reader(mongo_base_reader):
         else:
             return self.read(item)
             
-    
-    def distinct(self, key):
-        """
-        returns the distinct cursor values of the key        
-        """
-        res = self.cursor.distinct(key)
-        try:
-            return sort(res)
-        except TypeError:
-            return res
-
     def docs(self, *keys, doc = _doc):
         """
         self[::] flattens the entire document.
@@ -184,6 +173,13 @@ class mongo_reader(mongo_base_reader):
             pk = self._pk
             bad = self(projection = pk)[::].sort(_id).listby(pk).inc(lambda _id: len(_id)>1) 
             if len(bad):
-                self.collection.update_many(q._id == sum(bad[lambda _id: _id[:-1]], []), {_set: {_deleted : datetime.datetime.now()}})
+                spec = q._id == sum(bad[lambda _id: _id[:-1]], [])
+                self.collection.update_many(spec, {_set : dict(deleted = datetime.datetime.now())})
+                if not self._is_deleted():
+                    docs = [doc for doc in self.collection.find(spec)]
+                    ids = [doc[_id] for doc in docs]
+                    self.deleted.collection.delete_many(q(_id = ids))
+                    self.deleted.collection.insert_many(docs)
+                self.collection.delete_many(spec)
         return self
         

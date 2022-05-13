@@ -14,7 +14,7 @@ def test_mongo_pk_cursor():
     assert len(t) == 9
     t = t.insert_many(d)
     assert len(t) == 9
-    assert len(t.reset) == 18
+    assert len(t.deleted) == 9
     t.insert_one(Dict(a = 4, b = 4))
     assert len(t) == 10
     t.insert_one(Dict(a = 4, b = 4))
@@ -25,11 +25,16 @@ def test_mongo_pk_cursor():
     assert t.find_one(a = 3, b = 3)[0].c == 6
     assert t.find(a = 3).c == [4,5,6]
     
+    assert len(t.deleted[::]) == 21
+    t.deleted.inc(a = 3, b = 3)[::]
+    t.inc(a = 3, b = 3)[::]
     del t.sort('a', 'b')[0]
+    assert len(t.deleted[::]) == 21 + 1
     assert len(t.inc(a = 1, b = 1)) == 0
+
     del t['c']
     assert 'c' not in t.find_one(a = 3, b = 3)[0]
-    assert t.reset.inc(a = 3, b = 3).c == [6]
+    
     del t[dict(a = 3, b = 3)]
     with pytest.raises(ValueError):
         t[dict(a = 3, b = 3)]
