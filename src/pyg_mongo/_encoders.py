@@ -136,7 +136,7 @@ def parquet_encode(value, path, compression = 'GZIP'):
     else:
         return value
     
-def npy_encode(value, path, append = False):
+def npy_encode(value, path, append = True):
     """
     >>> from pyg_base import * 
     >>> value = pd.Series([1,2,3,4], drange(-3))
@@ -191,7 +191,7 @@ def csv_encode(value, path):
     else:
         return value
     
-def npy_write(doc, root = None):
+def npy_write(doc, root = None, append = True):
     """
     MongoDB is great for manipulating/searching dict keys/values. 
     However, the actual dataframes in each doc, we may want to save in a file system. 
@@ -220,7 +220,7 @@ def npy_write(doc, root = None):
     if root is None:
         return doc
     path = root_path(doc, root)
-    return npy_encode(doc, path)
+    return npy_encode(doc, path, append = append)
 
             
 def parquet_write(doc, root = None):

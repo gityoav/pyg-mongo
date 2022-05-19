@@ -543,7 +543,8 @@ def get_cell(table = None, db = None, url = None, deleted = None, **kwargs):
     >>> brown = db_cell(db = people, name = 'bob', surname = 'brown', age = 39).save()
     >>> assert get_cell('test','test', surname = 'brown').name == 'bob'
     """
-    return _get_cell(table = table, db = db, url = url, deleted = deleted, _from_memory = True, **kwargs)
+    _from_memory = kwargs.pop('_from_memory', True)
+    return _get_cell(table = table, db = db, url = url, deleted = deleted, _from_memory = _from_memory, **kwargs)
 
 
 def get_data(table = None, db = None, url = None, deleted = None, **kwargs):
