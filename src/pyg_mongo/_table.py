@@ -1,4 +1,4 @@
-from pyg_base import is_str, cfg_read, get_cache
+from pyg_base import is_str, cfg_read, get_cache, cache
 from pyg_mongo._reader import mongo_reader
 from pyg_mongo._cursor import mongo_cursor, mongo_pk_cursor
 
@@ -26,7 +26,8 @@ _mongo_table_cache['w'] = mongo_cursor, mongo_pk_cursor, MongoClient
 _mongo_table_cache['r'] = mongo_reader, mongo_reader, MongoClient
 
 
-def mongo_table(table, db, pk = None, url = None, reader = None, writer = None, mode = 'w', **kwargs):    
+@cache
+def _mongo_table(table, db, pk = None, url = None, reader = None, writer = None, mode = 'w', **kwargs):    
     """
     :Example:
     ---------
@@ -67,4 +68,30 @@ def mongo_table(table, db, pk = None, url = None, reader = None, writer = None, 
          res.create_index()
     return res
 
-        
+
+def mongo_table(table, db, pk = None, url = None, reader = None, writer = None, mode = 'w', **kwargs):    
+    """
+    :Example:
+    ---------
+    from pyg import *
+    from pymongo import MongoClient
+    from motor import MotorClient
+
+    table = db = 'test'
+    pk = 'key'
+    url = reader = writer = None    
+    mode = 'aw'    
+    kwargs = {}
+    client = MotorClient(url)
+    c = client[db][table]
+
+    isinstance(cursor, ())
+    res = obj(c, pk = pk, writer = writer, reader = reader, **kwargs)
+    
+    await c.insert_one(dict(a = 1))
+    await c.create_index(dict(a = 1))
+
+    cfg = cfg_read()
+    
+    """ 
+    return _mongo_table(table, db, pk = pk, url = url, reader = reader, writer = writer, mode = mode, **kwargs)      

@@ -511,7 +511,15 @@ def load_cell(table = None, db = None, url = None, deleted = None, **kwargs):
     """
     return _get_cell(table = table, db = db, url = url, deleted = deleted, **kwargs)
 
+def get_docs(table = None, db = None, url = None, pk = None, cell = 'data', **kwargs):
+    """
+    retrieve multiple cells from a table
 
+    """
+    t = mongo_table(db = db, table = table, url = url, pk = pk).inc(**kwargs)    
+    return t.docs(list(kwargs.keys()))
+    
+    
 def get_cell(table = None, db = None, url = None, deleted = None, **kwargs):
     """
     unlike load_cell which will get the data from the database by default 
