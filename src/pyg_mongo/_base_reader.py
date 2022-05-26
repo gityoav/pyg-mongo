@@ -2,7 +2,7 @@ from pyg_base._cell import _pk
 from pyg_base import is_dict, as_list, ulist, cache, dt, is_strs, Dict, sort
 from pyg_base import passthru, decode, is_str
 from pyg_mongo._q import q, _id
-from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _parquet, encode
+from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet, encode
 from functools import partial
 
 _root = 'root'
@@ -18,7 +18,7 @@ def as_reader(reader):
         return [reader]
 
 
-_writers = {_csv: csv_write , _npy: npy_write, _parquet: parquet_write}
+_writers = {_csv: csv_write , _npy: partial(npy_write, append = False), _npa: partial(npy_write, append = True), _parquet: parquet_write}
 
 def as_writer(writer):
     if isinstance(writer, list):
@@ -29,7 +29,7 @@ def as_writer(writer):
         return [passthru]
     elif is_str(writer):
         for ext, w in _writers.items():
-            if writer.endswith(ext[1:]):
+            if writer.endswith(ext):
                 root = writer[:-len(ext)]
                 if root:
                     return [partial(w, root = root), encode]

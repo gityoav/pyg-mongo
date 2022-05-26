@@ -8,7 +8,7 @@ from functools import partial
 
 
 _parquet = '.parquet'
-_npy = '.npy'
+_npy = '.npy'; _npa = '.npa'
 _csv = '.csv'
 _series = '_is_series'
 _root = 'root'
@@ -136,7 +136,7 @@ def parquet_encode(value, path, compression = 'GZIP'):
     else:
         return value
     
-def npy_encode(value, path, append = True):
+def npy_encode(value, path, append = False):
     """
     >>> from pyg_base import * 
     >>> value = pd.Series([1,2,3,4], drange(-3))
@@ -161,7 +161,6 @@ def npy_encode(value, path, append = True):
         return type(value)([npy_encode(v, '%s/%i'%(path,i), append = append) for i, v in enumerate(value)])
     else:
         return value
-
     
 
 
