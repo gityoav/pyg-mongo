@@ -76,36 +76,55 @@ while play.lower()[0] == 'y':
 
 
 
-#######################################
-
-def single_game_guess_the_number(number):
-    number = 25
-    ## you have 6 guesses to guess the number
-    ## when you guess, it will tell you higher/lower/exactly!
-        if input() is higher than number print 'Your guess is higher than the number'
-        if input() is lower than number print 'Your guess is lower than the number'
-print('welcome to Guess The Number :D . Please enter a guess')    
-    for i in range (6):
-        guess = input() 
-        score = compare(number,guess)
+######################################
+    
 
 
-i = input()
+from random import randrange
 
-i = int(i)
-
-if i>number:
-    print('Your guess %s is higher than the number'%i)
-elif i<number:
-    print('Your guess %s is lower than the number'%i)
-else:
-    print('well done')
-
-i = input()
+def is_guess_ok(guess):
+    if guess >= 100 or guess < 0:
+        print ("Please enter an integer between 0-99")
+        return False
+    else:
+        return True
 
 
+def compare_guess_and_number(number, guess):
+    if guess > number:
+        print('Your guess %s is higher than the number'%guess)
+        return False
+    elif guess < number:
+        print('Your guess %s is lower than the number'%guess)
+        return False
+    else:        
+        print('You have guessed the correct number! well done!') 
+        return True
 
 
+def single_game_guess_the_number(number): ### receives as an input a number 
+    print('welcome to Guess The Number :D . Please enter a guess')    
+    for i in range(6):
+        guess = input('please enter your guess:')
+        guess = int(guess)
+        while is_guess_ok(guess) is False:
+            guess = input('please enter your guess:')
+            guess = int(guess)
+        compared = compare_guess_and_number(number, guess)
+        if compared is True:
+            return i + 1
+    print('unlucky, the number is %s'%number)
+    return i+1
+
+    
+def multi_play():
+    play='y'
+    scores = []
+    while play == 'y':
+        number = randrange(100)
+        scores.append(single_game_guess_the_number(number))
+        play = input('play another? (y/n) ')
+    return scores
 
 
 
