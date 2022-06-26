@@ -1,3 +1,5 @@
 pyg-base
 pymongo
 dnspython
+sqlalchemy
+sqlalchemy-utils

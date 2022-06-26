@@ -193,8 +193,8 @@ class mongo_cursor(mongo_reader):
         """
         updates all documents in current cursor based on the doc. The two are equivalent:
         
-        >>> cursot.update_many(doc)
-        >>> collection.update_many(cursor._spec, { 'set' : update})
+        >>> cursor.update_many(doc)
+        >>> cursor.collection.update_many(cursor._spec, { 'set' : doc})
 
         :Parameters:
         ----------

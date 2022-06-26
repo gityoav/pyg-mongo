@@ -1,43 +1,13 @@
 from pyg_base._cell import _pk
-from pyg_base import is_dict, as_list, ulist, cache, dt, is_strs, Dict, sort
-from pyg_base import passthru, decode, is_str
+from pyg_base import is_dict, as_list, ulist, cache, is_strs, Dict, sort, decode
 from pyg_mongo._q import q, _id
-from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet, encode
-from functools import partial
+from pyg_mongo._writers import as_reader, as_writer
+#from pyg_base import passthru, decode, encode, is_str
+#from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet
+#from functools import partial
 
 _root = 'root'
 
-def as_reader(reader):
-    if isinstance(reader, list):
-        return sum([as_reader(r) for r in reader], [])
-    elif reader is None or reader is True or reader == ():
-        return [decode]
-    elif reader is False or reader == 0:
-        return [passthru]
-    else:
-        return [reader]
-
-
-_writers = {_csv: csv_write , _npy: partial(npy_write, append = False), _npa: partial(npy_write, append = True), _parquet: parquet_write}
-
-def as_writer(writer):
-    if isinstance(writer, list):
-        return sum([as_writer(w) for w in writer], [])
-    if writer is None or writer is True or writer == ():
-        return [encode]
-    elif writer is False or writer == 0:
-        return [passthru]
-    elif is_str(writer):
-        for ext, w in _writers.items():
-            if writer.endswith(ext):
-                root = writer[:-len(ext)]
-                if root:
-                    return [partial(w, root = root), encode]
-                else:
-                    return [w, encode]
-        raise ValueError('We support only csv/npy/parquet writers and writer should look like: c:/somewhere/%name/%surname.csv or d:/archive/%country/%city/results.parquet or with .npy')
-    else:
-        return as_list(writer)
 
 def _dict1(keys):
     if keys is None or is_dict(keys):
@@ -251,7 +221,7 @@ class mongo_base_reader(object):
     def _write(self, doc, writer = None):
         res = doc.copy()
         writer = self._writer(writer, doc)
-        for w in writer:
+        for w in as_list(writer):
             res = w(res)
         pk = self._pk
         missing = set(pk) - set(doc.keys())
