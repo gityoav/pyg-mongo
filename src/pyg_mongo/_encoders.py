@@ -32,7 +32,7 @@ def encode(value):
 
 __all__ = ['root_path', 'pd_to_csv', 'pd_read_csv', 'parquet_encode', 'parquet_write', 'csv_encode', 'csv_write']
 
-def root_path(doc, root, fmt = None):
+def root_path(doc, root, fmt = None, **kwargs):
     """
     returns a location based on doc
     
@@ -56,7 +56,9 @@ def root_path(doc, root, fmt = None):
     >>> root = 'c:/archive/%report.date/%pupil.name.%pupil.surname/'
     >>> assert root_path(doc, root, '%Y') == 'c:/archive/2000/yoav.git/'  # can choose to format dates by providing a fmt.
     """
-    items = sorted(tree_items(dict(doc)))[::-1]
+    doc = dict(doc)
+    doc.update(kwargs)
+    items = sorted(tree_items(doc))[::-1]
     res = root
     for row in items:
         text = '%(' + '.'.join(row[:-1]) + ')'
@@ -67,9 +69,13 @@ def root_path(doc, root, fmt = None):
         if text in root:
             value = dt2str(row[-1], fmt).replace(':','') if is_date(row[-1]) else str(row[-1]).replace(':', '')
             res = res.replace(text, '%s'% value)
-    if '%' in res:
-        raise ValueError('The document did not contain enough keys to determine the path %s'%res)
     return res
+
+def _root_path(doc, root, fmt = None, **kwargs):
+    path = root_path(doc, root, fmt = fmt, **kwargs)
+    if '%' in path:
+        raise ValueError('The document did not contain enough keys to determine the path %s'%path)
+    return path
 
 def pd_to_csv(value, path):
     """
@@ -218,7 +224,7 @@ def npy_write(doc, root = None, append = True):
         root = doc[_db].keywords[_root]
     if root is None:
         return doc
-    path = root_path(doc, root)
+    path = _root_path(doc, root)
     return npy_encode(doc, path, append = append)
 
             
@@ -250,7 +256,7 @@ def parquet_write(doc, root = None):
         root = doc[_db].keywords[_root]
     if root is None:
         return doc
-    path = root_path(doc, root)
+    path = _root_path(doc, root)
     return parquet_encode(doc, path)
 
 def csv_write(doc, root = None):
@@ -274,7 +280,7 @@ def csv_write(doc, root = None):
         root = doc[_db].keywords[_root]
     if root is None:
         return doc
-    path = root_path(doc, root)
+    path = _root_path(doc, root)
     return csv_encode(doc, path)
 
 

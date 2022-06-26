@@ -399,10 +399,9 @@ class sql_table(object):
         if len(rs) > 0:
             columns = self.columns
             rs = dictable([self._enrich(row, columns) for row in rs]) 
-            writer = self._writer()
-            rs = rs.do(lambda _value: self._write(_value, writer = writer))
+            rows = [{key: self._write(value, kwargs = row) for key, value in row.items()} for row in rs]
             with self.engine.connect() as conn:
-                conn.execute(self.table.insert(), list(rs))
+                conn.execute(self.table.insert(), rows)
         return self
     
     
@@ -425,20 +424,20 @@ class sql_table(object):
                 res = res[r] if is_strs(r) else r(res)
         return res
         
-    def _writer(self, writer = None, doc = None):
+    def _writer(self, writer = None, doc = None, kwargs = None):
         doc = doc or {}
         if writer is None:
             writer = doc.get(_root)
         if writer is None:
             writer = self.writer
-        return as_writer(writer)
+        return as_writer(writer, kwargs)
             
 
-    def _write(self, doc, writer = None):
+    def _write(self, doc, writer = None, kwargs = None):
         if not isinstance(doc, dict):
             return doc
         res = doc.copy()
-        writer = self._writer(writer, doc)
+        writer = self._writer(writer, doc, kwargs = kwargs)
         for w in as_list(writer):
             res = w(res)
         if isinstance(res, dict):

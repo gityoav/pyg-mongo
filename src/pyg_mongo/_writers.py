@@ -1,4 +1,4 @@
-from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet
+from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet, root_path
 from pyg_base import encode, decode, passthru, is_str, as_list
 from functools import partial
 
@@ -14,7 +14,7 @@ def as_reader(reader):
     else:
         return [reader]
 
-def as_writer(writer):
+def as_writer(writer, kwargs = None):
     if isinstance(writer, list):
         return sum([as_writer(w) for w in writer], [])
     if writer is None or writer is True or writer == ():
@@ -24,8 +24,10 @@ def as_writer(writer):
     elif is_str(writer):
         for ext, w in WRITERS.items():
             if writer.endswith(ext):
-                root = writer[:-len(ext)]
+                root = writer[:-len(ext)]                    
                 if root:
+                    if kwargs:
+                        root = root_path(kwargs, root)
                     return [partial(w, root = root), encode]
                 else:
                     return [w, encode]
