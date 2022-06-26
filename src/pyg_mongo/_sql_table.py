@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy_utils.functions import create_database
-from pyg_base import cache, cfg_read, named_dict, as_list, dictattr, dictable, Dict, decode, is_strs, is_str, is_int, ulist, encode, passthru
+from pyg_base import cache, cfg_read, named_dict, as_list, dictattr, dictable, Dict, decode, is_dict, is_dictable, is_strs, is_str, is_int, ulist, encode, passthru
 from pyg_mongo._writers import as_reader, as_writer
 from sqlalchemy import Table, Column, Integer, String, MetaData, Identity, Float, DATE, DATETIME, TIME, select, func, not_, and_, or_, desc, asc
 from sqlalchemy.orm import Session
@@ -46,18 +46,19 @@ _types = {str: String, int : Integer, float: Float, datetime.date: DATE, datetim
 _orders = {1 : asc, True: asc, 'asc': asc, asc : asc, -1: desc, False: desc, 'desc': desc, desc: desc}
 
 
-def get_sql_table(table, database = None, non_null = None, nullable = None, _id = None, schema = None, server = None, reader = None, writer = None):
+def get_sql_table(table, database = None, non_null = None, nullable = None, _id = None, schema = None, server = None, reader = None, writer = None, pk = None):
     """
     Creates a basic sql table. Can also be used to simply read table from the database
     """
-    values = table.split('.')
-    if len(values) == 2:
-        database = database or values[0]
-        if database != values[0]:
-            raise ValueError('database cannot be both %s and %s'%(values[0], database))
-        table = values[1]
-    elif len(values)>2:
-        raise ValueError('not sure how to translate this %s into a database.table format'%table)
+    if isinstance(table, str):
+        values = table.split('.')
+        if len(values) == 2:
+            database = database or values[0]
+            if database != values[0]:
+                raise ValueError('database cannot be both %s and %s'%(values[0], database))
+            table = values[1]
+        elif len(values)>2:
+            raise ValueError('not sure how to translate this %s into a database.table format'%table)
     e = get_engine(server = server, database = database)
     non_null = non_null or {}
     nullable = nullable or {}
@@ -110,7 +111,7 @@ def get_sql_table(table, database = None, non_null = None, nullable = None, _id 
                     raise ValueError('column %s does not exist in %s.%s'%(key, database, table_name))
                 elif cols[key.name].nullable is True:
                     raise ValueError('WARNING: You defined %s as a primary but it is nullable in %s.%s'%(key, database, table_name))
-    res = sql_table(table = tbl, database = database, server = server, engine = e, spec = None, selection = None, reader = reader, writer = writer)
+    res = sql_table(table = tbl, database = database, server = server, engine = e, spec = None, selection = None, reader = reader, writer = writer, pk = pk)
     return res
 
 def _tbl_insert_one(tbl, doc):
@@ -151,7 +152,7 @@ class sql_table(object):
     >>> t.inc(name = 'ayala').update(age = 17)
     
     """
-    def __init__(self, table, database = None, engine = None, server = None, spec = None, selection = None, order = None, reader = None, writer = None, **_):
+    def __init__(self, table, database = None, engine = None, server = None, spec = None, selection = None, order = None, reader = None, writer = None, pk = None, **_):
         """
         Parameters
         ----------
@@ -187,6 +188,7 @@ class sql_table(object):
             order = table.order if order is None else order
             reader = table.reader if reader is None else reader
             writer = table.writer if writer is None else writer
+            pk = table.pk if pk is None else pk
             table = table.table
     
         self.table = table
@@ -198,6 +200,7 @@ class sql_table(object):
         self.order = order
         self.reader = reader
         self.writer = writer
+        self.pk = pk
     
     def copy(self):
         return type(self)(self)
@@ -276,9 +279,7 @@ class sql_table(object):
         ---------
         >>> from pyg import * 
         >>> import datetime
-        >>> self = get_sql_table(database = 'test', table = 'students', _id = dict(_id = int, created = datetime.datetime), 
-                                 non_null = ['name', 'surname'], 
-                                 nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float))
+        >>> self = get_sql_table(database = 'test', table = 'students', _id = dict(_id = int, created = datetime.datetime), non_null = ['name', 'surname'], nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float), pk = ['name', 'surname'])
         >>> self.delete()
         >>> assert len(self) == 0         
         >>> self = self.insert(name = 'yoav', surname = 'git')
@@ -388,6 +389,44 @@ class sql_table(object):
             raise ValueError('got multiple possible values for each of these columns: %s'%conflicted)
         res.update(found)
         return res
+                
+    def insert_one(self, doc):
+        res = self._enrich(doc)
+        writer = self._writer(None, doc, res)
+        res = {key: self._write(value, writer = writer) for key, value in res.items()}
+        if self.pk is not None:
+            where = {key: doc[key] for key in as_list(self.pk)}
+            db = self.inc().inc(**where)
+            db.pk = None
+            if len(db) == 1:
+                old = db[0]
+                old['deleted'] = datetime.datetime.now()
+                db.deleted.insert_one(old)
+                db.delete()
+        with self.engine.connect() as conn:
+            conn.execute(self.table.insert(), [res])
+        return self
+            
+    def insert_many(self, docs):
+        rs = dictable(docs)
+        if len(rs) > 0:
+            if self.pk is None:
+                columns = self.columns
+                rs = dictable([self._enrich(row, columns) for row in rs]) 
+                rows = [{key: self._write(value, kwargs = row) for key, value in row.items()} for row in rs]
+                with self.engine.connect() as conn:
+                    conn.execute(self.table.insert(), rows)
+            else:
+                _ = [self.insert_one(doc) for doc in rs]
+        return self
+    
+    def __add__(self, item):
+        if is_dict(item) and not is_dictable(item):
+            self.insert_one(item)
+        else:
+            self.insert_many(item)
+        return self
+
         
     def insert(self, data = None, columns = None, **kwargs):
         """
@@ -396,13 +435,7 @@ class sql_table(object):
         >>> self.insert(pd.DataFrame(dict(name = ['father', 'mother', 'childa'], surname = 'common_surname')))
         """
         rs = dictable(data = data, columns = columns, **kwargs) ## this allows us to insert multiple rows easily as well as pd.DataFrame
-        if len(rs) > 0:
-            columns = self.columns
-            rs = dictable([self._enrich(row, columns) for row in rs]) 
-            rows = [{key: self._write(value, kwargs = row) for key, value in row.items()} for row in rs]
-            with self.engine.connect() as conn:
-                conn.execute(self.table.insert(), rows)
-        return self
+        return self.insert_many(rs)
     
     
     def _reader(self, reader = None):
@@ -492,6 +525,12 @@ class sql_table(object):
 
     def delete(self, **kwargs):
         res = self.inc(**kwargs)
+        if self.pk is not None: ## we move the data out
+            docs = res[::]
+            docs['deleted'] = datetime.datetime.now()
+            db = self.deleted()
+            db.pk = None
+            db.insert(docs)
         statement = res.table.delete()
         if res.spec is not None:
             statement = statement.where(res.spec)
@@ -520,19 +559,12 @@ class sql_table(object):
             res = [row[0] for row in res]
         return res
     
-    def __getattr__(self, key):
-        if key.startswith('_'):
-            return super(sql_table, self).__getattr__(key)
-        else:            
-            return self.distinct(key)  
-
     def __repr__(self):
         return '%(database)s.%(table)s, %(n)i records\n%(statement)s'%dict(database = self.database, table = self.table.name, n = len(self), statement = str(self.statement()))
                 
     def _is_deleted(self):
         return self.database.startswith('deleted_')
 
-    
     @property
     def deleted(self):
         if self._is_deleted():
@@ -542,6 +574,7 @@ class sql_table(object):
             res = get_sql_table(table = self.table, database = database, non_null = dict(deleted = datetime.datetime), server = self.server)
             res.spec = self.spec
             res.order = self.order
+            res.pk = None
             return res
                 
     @property
@@ -554,22 +587,5 @@ class sql_table(object):
 
         """
         return ('server', self.server or _server()), ('db', self.database), ('table', self.table.name)
-
-
-
-
-def sql_cursor(sql_table):
-    def __init__(self, table, database = None, engine = None, server = None, spec = None, selection = None, order = None, doc = None, root = None, reader = None, writer = None, **_):
-        if isinstance(table, sql_cursor):
-            doc = table.doc if doc is None else doc
-            root = table.root if root is None else root
-            reader = table.reader if reader is None else reader
-            writer = table.writer if writer is None else writer
-        self.doc = doc
-        self.root = root
-        self.reader = reader 
-        self.writer = writer
-        super(sql_cursor, self).__init__(table, database = database, engine = engine, server = server, spec= spec, selection = selection, order = order)
-
 
 
