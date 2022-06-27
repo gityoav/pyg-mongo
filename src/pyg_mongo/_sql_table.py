@@ -402,11 +402,13 @@ class sql_table(object):
             where = {key: doc[key] for key in as_list(self.pk)}
             db = self.inc().inc(**where)
             db.pk = None
-            if len(db) == 1:
-                old = db[0]
-                old['deleted'] = datetime.datetime.now()
-                db.deleted.insert_one(old)
+            if len(db) > 0:
+                docs = db[::]
+                docs['deleted'] = datetime.datetime.now()
+                db.deleted.insert(docs)
                 db.delete()
+            if len(docs) > 1:
+                print('INFO: there was disambiguity in the existing records, %s existed matching %s... deleting all'%(len(docs), where))
         with self.engine.connect() as conn:
             conn.execute(self.table.insert(), [res])
         return self
