@@ -110,6 +110,9 @@ class mongo_base_reader(object):
     def project(self, projection = None):
         return self(projection = projection)
 
+    @property
+    def _ids(self):
+        return [_id]
     
     def exc(self, **kwargs):
         """
