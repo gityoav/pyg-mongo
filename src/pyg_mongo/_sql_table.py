@@ -238,7 +238,11 @@ class sql_table(object):
         elif isinstance(expression, (list, tuple)):
             return sa.or_([self._c(v) for v in expression])            
         else:
-            return expression            
+            return expression  
+    
+    @property
+    def c(self):
+        return self.table.c
 
     def find(self, *args, **kwargs):
         """
@@ -525,12 +529,10 @@ class sql_table(object):
 
     def delete(self, **kwargs):
         res = self.inc(**kwargs)
-        if self.pk is not None: ## we move the data out
+        if self.pk is not None: ## we first copy the existing data out to deleted database
             docs = res[::]
             docs['deleted'] = datetime.datetime.now()
-            db = self.deleted()
-            db.pk = None
-            db.insert(docs)
+            self.deleted.insert(docs)
         statement = res.table.delete()
         if res.spec is not None:
             statement = statement.where(res.spec)
