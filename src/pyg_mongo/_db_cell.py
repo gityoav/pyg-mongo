@@ -239,9 +239,11 @@ class db_cell(cell):
             return self            
         ref = type(doc)(**cell_clear(dict(doc)))
         try:
-            doc[_id] = db.update_one(ref)[_id]
+            updated = db.update_one(ref)
         except Exception:
-            doc[_id] = db.update_one(ref-_id)[_id]
+            updated = db.update_one(ref - db._ids)
+        for i in db._ids:
+            doc[i] = updated[i]
         get_GRAPH()[address] = doc
         return doc
                 
