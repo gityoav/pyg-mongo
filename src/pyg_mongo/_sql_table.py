@@ -243,6 +243,10 @@ class sql_table(object):
     @property
     def c(self):
         return self.table.c
+    
+    @property
+    def _pk(self):
+        return ulist(sorted(set(as_list(self.pk))))
 
     def find(self, *args, **kwargs):
         """
