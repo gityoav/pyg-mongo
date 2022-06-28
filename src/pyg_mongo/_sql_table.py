@@ -8,20 +8,46 @@ import datetime
 from copy import copy
 import json
 
-
 _id = '_id'
 _doc = 'doc'
 _root = 'root'
 
+DRIVER = None
+SERVER = None
+
 def _server(server = None):
-    if server is None:
+    if server is None or server is True:
+        server = SERVER
+    if server is None or server is True:
         server = cfg_read().get('sql_server')
     if server is None:
         raise ValueError('please provide server or set a "sql_server" in cfg file: from pyg_base import *; cfg = cfg_read(); cfg["sql_server"] = "server"; cfg_write(cfg)')
     return server
 
-def get_cstr(db = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):
-    server = _server(server)    
+def _driver(driver = None):
+    driver = driver or DRIVER
+    if driver is None or driver is True:
+        driver = cfg_read().get('sql_driver')
+    if driver is None:
+        import pyodbc
+        odbc_drivers = [d for d in pyodbc.drivers() if d.startswith('ODBC')]
+        if len(odbc_drivers):
+            driver = sorted(odbc_drivers)[-1].replace(' ', '+')
+        if driver is None:
+            raise ValueError('No ODBC drivers found for SQL Server, please save one: cfg = cfg_read(); cfg["sql_driver"] = "ODBC+Driver+17+for+SQL+Server"; cfg_write(cfg)')    
+        else:
+            return driver
+    elif is_int(driver):
+        return 'ODBC+Driver+%i+for+SQL+Server'%driver
+    else:
+        return driver
+    
+DRIVER = _driver()
+SERVER = _server()
+    
+def get_cstr(db = 'master', server = None, driver = None, trusted_connection = 'yes', user = None, password = None):
+    server = _server(server) 
+    driver = _driver(driver)
     if '//' in server:
         return server
     else:
@@ -29,9 +55,10 @@ def get_cstr(db = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Serv
         params = '&'.join('%s=%s'%(k,v) for k,v in connection.items())        
         return 'mssql+pyodbc://%(server)s/%(db)s%(params)s'%dict(server=server, db = db or 'master', params = '?' +params if params else '')
 
-def get_engine(db = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):    
+def get_engine(db = 'master', server = None, driver = None, trusted_connection = 'yes', user = None, password = None):    
     if isinstance(server, sa.engine.base.Engine):
         return server
+    driver = _driver()
     cstr = get_cstr(server=server, db = db, driver = driver, trusted_connection = trusted_connection , user = user, password = password)    
     e = sa.create_engine(cstr)
     try:
@@ -197,8 +224,8 @@ class sql_table(object):
     
         self.table = table
         self.db = db
-        self.engine = engine
-        self.server = server
+        self.server = _server(server)
+        self.engine = engine or get_engine(db = self.db, server = self.server)
         self.spec = spec
         self.selection = selection
         self.order = order
@@ -335,8 +362,14 @@ class sql_table(object):
                      pk = ['name', 'surname'], doc = True)        
         db()        
         self = sql_table(db = 'test', table = 'students')
-        doc = db_cell(add_, a = 2, b = 3, name = 'itamar', surname = 'date', db = db)()
-        
+        self.delete()
+        doc1 = db_cell(add_, a = 2, b = 4, name = 'itamar', surname = 'date', db = db).load().go()
+        doc2 = db_cell(add_, a = 3, b = 4, name = 'itamar', surname = 'date', db = db).load().go()
+        assert len(db()) == 1        
+
+        assert db()[0].data == 
+        db().docs()
+        doc2.save()
         """
         if len(args) == 0 and len(kwargs) == 0:
             return self
@@ -444,23 +477,39 @@ class sql_table(object):
         res.update(found)
         return res
                 
-    def insert_one(self, doc):
+    def insert_one(self, doc, ignore_bad_keys = False):
+        columns = self.columns
+        if not ignore_bad_keys:
+            bad_keys = {key: value for key, value in doc.items() if key not in columns}
+            if len(bad_keys) > 0:
+                raise ValueError('cannot insert into db a document with these keys: %s. The table only has these keys: %s'%(bad_keys, columns))
         doc = self._enrich(doc)
         writer = self._writer(None, doc, doc)
-        res = {key: self._write(value, writer = writer) for key, value in doc.items()}
-        if self.pk is not None:
-            where = {key: doc[key] for key in as_list(self.pk)}
-            db = self.inc().inc(**where)
-            db.pk = None
-            if len(db) > 0:
-                docs = db[::]
-                docs['deleted'] = datetime.datetime.now()
-                db.deleted.insert(docs)
-                db.delete()
-                if len(docs) > 1:
-                    print('INFO: there was disambiguity in the existing records, %s existed matching %s... deleting all'%(len(docs), where))
-        with self.engine.connect() as conn:
-            conn.execute(self.table.insert(), [res])
+        res = Dict({key: self._write(value, writer = writer) for key, value in doc.items() if key in columns})
+        if self._pk:
+            doc_id = self._id(res)
+            ids = self._ids
+            db = self.inc().inc(**doc_id)
+            docs = db[::]
+            if len(docs) == 0:
+                with self.engine.connect() as conn: 
+                    conn.execute(self.table.insert(),[res - ids])
+                if ids:    
+                    latest = db[0]
+                    doc.update(latest[ids])
+            else:
+                db.deleted.insert(docs(deleted = datetime.datetime.now()) - ids)
+                if len(docs) == 1:
+                    latest = docs[0]
+                else:
+                    latest = docs.sort(ids)[-1]
+                    db.exc(*db._id(latest)).full_delete()
+                latest.update(res)
+                db.inc(db._id(latest)).update(**(latest-ids))
+                doc.update(latest[ids])
+        else:
+            with self.engine.connect() as conn:
+                conn.execute(self.table.insert(), [res])
         return doc
     
     
@@ -618,17 +667,21 @@ class sql_table(object):
     
     set = update
 
+    def full_delete(self):
+        statement = self.table.delete()
+        if self.spec is not None:
+            statement = statement.where(self.spec)
+        with self.engine.connect() as conn:
+            conn.execute(statement)
+        return self
+
     def delete(self, **kwargs):
         res = self.inc(**kwargs)
         if self._pk: ## we first copy the existing data out to deleted db
             docs = res[::]
             docs['deleted'] = datetime.datetime.now()
             self.deleted.insert(docs)
-        statement = res.table.delete()
-        if res.spec is not None:
-            statement = statement.where(res.spec)
-        with res.engine.connect() as conn:
-            conn.execute(statement)
+        res.full_delete()
         return self
         
     def sort(self, order = None):

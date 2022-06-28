@@ -2,6 +2,7 @@ from pyg_base import cell, is_date, ulist, logger, cell_clear, as_list, get_DAG,
 from pyg_base import cell_item, Dict
 from pyg_mongo._q import _id, _deleted, q
 from pyg_mongo._table import mongo_table
+from pyg_mongo._sql_table import get_sql_table
 from functools import partial
 
 # import networkx as nx
@@ -82,9 +83,9 @@ def db_load(value, mode = 0):
     else:
         return value
     
-def _load_asof(table, kwargs, deleted):    
+def _load_asof(table, kwargs, deleted, qq):    
     t = table.inc(kwargs)
-    live = t.inc(-q.deleted)
+    live = t
     l = live.count()
     if deleted in (False, None): # we just want live values
         if l == 0:
@@ -93,7 +94,7 @@ def _load_asof(table, kwargs, deleted):
             raise ValueError('multiple cells found matching %s'%kwargs)
         return live[0]
     else:        
-        past = t.inc(+q.deleted) if deleted is True else t.inc(+q.deleted, q.deleted > deleted) ## it is possible to have cells with deleted in self
+        past = t.deleted if deleted is True else t.deleted.inc(qq['deleted'] > deleted) ## it is possible to have cells with deleted in self
         p = past.count()
         if p == 1:
             return past[0]
@@ -103,7 +104,7 @@ def _load_asof(table, kwargs, deleted):
             else:
                 return past.sort('deleted')[0]
         else:    ## no records found in past, we go to the deleted history
-            history = t.deleted if deleted is True else t.deleted.inc(q.deleted > deleted) #cells deleted after deleted date
+            history = t.deleted if deleted is True else t.deleted.inc(qq['deleted'] > deleted) #cells deleted after deleted date
             h = history.count()
             if h == 0:
                 if l > 0:
@@ -414,7 +415,7 @@ def cell_pull(nodes, types = cell):
 
 
 
-def _get_cell(table = None, db = None, url = None, deleted = None, _from_memory = None, **kwargs):
+def _get_cell(table = None, db = None, url = None, server = None, deleted = None, _from_memory = None, **kwargs):
     """
     retrieves a cell from a table in a database based on its key words. In addition, can look at earlier versions using deleted.
     It is important to note that this DOES NOT go through the cache mechanism but goes to the database directly every time.
@@ -425,8 +426,10 @@ def _get_cell(table = None, db = None, url = None, deleted = None, _from_memory 
         name of table (Mongo collection). alternatively, you can just provide an address
     db : str
         name of database.
-    url : TYPE, optional
-        DESCRIPTION. The default is None.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
     deleted : datetime/None, optional
         The date corresponding to the version of the cell we want
         None = live cell
@@ -451,6 +454,7 @@ def _get_cell(table = None, db = None, url = None, deleted = None, _from_memory 
         params = dict(table)
         params.update({key: value for key, value in dict(db = db, 
                                                          url = url, 
+                                                         server = server,
                                                          deleted = deleted,
                                                          _from_memory = _from_memory
                                                          ).items() if value is not None})
@@ -465,19 +469,24 @@ def _get_cell(table = None, db = None, url = None, deleted = None, _from_memory 
         address = kwargs_address = tuple([(key, kwargs.get(key)) for key in pk]) 
    
     if db is not None and table is not None:
-        t = mongo_table(db = db, table = table, url = url, pk = pk)
+        if server is None:
+            t = mongo_table(db = db, table = table, url = url, pk = pk)
+            qq = q
+        else:
+            t = get_sql_table(db = db, table = table, server = server, pk = pk)
+            qq = t.table.c
         address = t.address + kwargs_address
         if _from_memory and deleted in (None, False): # we want the standard cell
             if address not in GRAPH:
-                GRAPH[address] = _load_asof(t, kwargs, deleted)
+                GRAPH[address] = _load_asof(t, kwargs, deleted, qq)
             return GRAPH[address]
         else:
-            return _load_asof(t, kwargs, deleted) # must not overwrite live version. User wants a specific deleted version
+            return _load_asof(t, kwargs, deleted, qq) # must not overwrite live version. User wants a specific deleted version
     else:
         return GRAPH[address]
 
 
-def load_cell(table = None, db = None, url = None, deleted = None, **kwargs):
+def load_cell(table = None, db = None, url = None, server = None, deleted = None, **kwargs):
     """
     retrieves a cell from a table in a database based on its key words. 
     In addition, can look at earlier versions using deleted.
@@ -490,8 +499,10 @@ def load_cell(table = None, db = None, url = None, deleted = None, **kwargs):
         name of table (Mongo collection). alternatively, you can just provide an address
     db : str
         name of database.
-    url : TYPE, optional
-        DESCRIPTION. The default is None.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
     deleted : datetime/None, optional
         The date corresponding to the version of the cell we want
         None = live cell
@@ -511,18 +522,32 @@ def load_cell(table = None, db = None, url = None, deleted = None, **kwargs):
     >>> assert load_cell('test','test', surname = 'brown').name == 'bob'
         
     """
-    return _get_cell(table = table, db = db, url = url, deleted = deleted, **kwargs)
+    return _get_cell(table = table, db = db, url = url, deleted = deleted, server = server, **kwargs)
 
-def get_docs(table = None, db = None, url = None, pk = None, cell = 'data', **kwargs):
+def get_docs(table = None, db = None, url = None, server = None, pk = None, cell = 'data', **kwargs):
     """
-    retrieve multiple cells from a table
+    retrieves multiple cells from a table
+
+    :Parameters:
+    ----------
+    table : str
+        name of table (Mongo collection). alternatively, you can just provide an address
+    db : str
+        name of database.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
 
     """
-    t = mongo_table(db = db, table = table, url = url, pk = pk).inc(**kwargs)    
+    if server is None:
+        t = mongo_table(db = db, table = table, url = url, pk = pk).inc(**kwargs)
+    else:
+        t = get_sql_table(db = db, table = table, server = server, pk = pk).inc(**kwargs)        
     return t.docs(list(kwargs.keys()))
     
     
-def get_cell(table = None, db = None, url = None, deleted = None, **kwargs):
+def get_cell(table = None, db = None, url = None, server = None, deleted = None, **kwargs):
     """
     unlike load_cell which will get the data from the database by default 
     get cell looks at the in-memory cache to see if the cell exists there.
@@ -533,8 +558,10 @@ def get_cell(table = None, db = None, url = None, deleted = None, **kwargs):
         name of table (Mongo collection). alternatively, you can just provide an address
     db : str
         name of database.
-    url : TYPE, optional
-        DESCRIPTION. The default is None.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
     deleted : datetime/None, optional
         The date corresponding to the version of the cell we want
         None = live cell
@@ -554,10 +581,10 @@ def get_cell(table = None, db = None, url = None, deleted = None, **kwargs):
     >>> assert get_cell('test','test', surname = 'brown').name == 'bob'
     """
     _from_memory = kwargs.pop('_from_memory', True)
-    return _get_cell(table = table, db = db, url = url, deleted = deleted, _from_memory = _from_memory, **kwargs)
+    return _get_cell(table = table, db = db, url = url, server = server, deleted = deleted, _from_memory = _from_memory, **kwargs)
 
 
-def get_data(table = None, db = None, url = None, deleted = None, **kwargs):
+def get_data(table = None, db = None, url = None, server = None, deleted = None, **kwargs):
     """
     retrieves a cell from a table in a database based on its key words. 
     In addition, can look at earlier versions using deleted.
@@ -568,8 +595,10 @@ def get_data(table = None, db = None, url = None, deleted = None, **kwargs):
         name of table (Mongo collection).
     db : str
         name of database.
-    url : TYPE, optional
-        DESCRIPTION. The default is None.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
     deleted : datetime/None, optional
         The date corresponding to the version of the cell we want
         None = live cell
@@ -590,9 +619,9 @@ def get_data(table = None, db = None, url = None, deleted = None, **kwargs):
     >>> assert get_data('test','test', surname = 'brown') is None
         
     """    
-    return cell_item(get_cell(table, db = db, url = url, deleted = deleted, **kwargs), key = 'data')
+    return cell_item(get_cell(table, db = db, url = url, server = server, deleted = deleted, **kwargs), key = 'data')
 
-def load_data(table = None, db = None, url = None, deleted = None, **kwargs):
+def load_data(table = None, db = None, url = None, server = None, deleted = None, **kwargs):
     """
     retrieves a cell from a table in a database based on its key words. 
     In addition, can look at earlier versions using deleted.
@@ -603,8 +632,12 @@ def load_data(table = None, db = None, url = None, deleted = None, **kwargs):
         name of table (Mongo collection).
     db : str
         name of database.
-    url : TYPE, optional
-        DESCRIPTION. The default is None.
+    url : str, optional
+        mongodb server location. The default is None.
+    server : str or True, optional
+        sql server location. The default is None (default to mongodb). Set to True to map to default sql server configured in cfg['sql_server']
+        
+        
     deleted : datetime/None, optional
         The date corresponding to the version of the cell we want
         None = live cell
@@ -625,5 +658,5 @@ def load_data(table = None, db = None, url = None, deleted = None, **kwargs):
     >>> assert load_data('test','test', surname = 'brown') is None
         
     """    
-    return cell_item(load_cell(table, db = db, url = url, deleted = deleted, **kwargs), key = 'data')
+    return cell_item(load_cell(table, db = db, url = url, server = server, deleted = deleted, **kwargs), key = 'data')
 
