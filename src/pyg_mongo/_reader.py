@@ -7,8 +7,7 @@ __all__ = ['mongo_reader']
 
 
 class mongo_reader(mongo_base_reader):
-
-
+    
     def _assert_one_or_none(self):
         n = self.count()
         if n>1:

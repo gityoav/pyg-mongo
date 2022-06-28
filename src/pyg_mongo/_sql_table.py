@@ -280,7 +280,7 @@ class sql_table(object):
             t = self.table.c    
             return sa.and_(*[sa.or_(*[t[k] == i for i in v]) if isinstance(v, list) else t[k] == self._c(v) for k,v in expression.items()]) 
         elif isinstance(expression, (list, tuple)):
-            return sa.or_([self._c(v) for v in expression])            
+            return sa.or_(*[self._c(v) for v in expression])            
         else:
             return expression  
     
@@ -354,19 +354,34 @@ class sql_table(object):
         
         
         from pyg import *
+        from pyg_mongo._db_cell import _load_asof
         import datetime
+
         db = partial(get_sql_table, db = 'test', table = 'students', 
                      _id = dict(_id = int, created = datetime.datetime), 
                      non_null = ['name', 'surname'], 
                      nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float), 
                      pk = ['name', 'surname'], doc = True)        
-        db()        
-        self = sql_table(db = 'test', table = 'students')
-        self.delete()
+        table = db()        
+        kwargs = dict(name = 'itamar', surname = 'date')
+        deleted = False
+        qq = None
+        doc = _load_asof(table, kwargs, deleted, qq)
+        doc = doc.save()
+        self = db()
+        get_sql_table('students', 'test').delete()
+        
         doc1 = db_cell(add_, a = 2, b = 4, name = 'itamar', surname = 'date', db = db).load().go()
         doc2 = db_cell(add_, a = 3, b = 4, name = 'itamar', surname = 'date', db = db).load().go()
-        assert len(db()) == 1        
 
+        self
+        doc = doc1
+        self.update_one(doc)
+
+        assert len(db()) == 1        
+        doc1._id
+        doc2._id        
+        
         assert db()[0].data == 
         db().docs()
         doc2.save()
@@ -383,7 +398,7 @@ class sql_table(object):
         if self.spec is None:
             res.spec = e
         else:
-            res.spec = sa.and_(self.q, e)            
+            res.spec = sa.and_(self.spec, e)            
         return res
     
     
@@ -397,6 +412,8 @@ class sql_table(object):
         if self.spec is not None:
             statement = statement.where(self.spec)
         return list(self.engine.connect().execute(statement))[0][0]
+    
+    count = __len__
 
     @property    
     def columns(self):
@@ -461,7 +478,7 @@ class sql_table(object):
         some of the values may in fact be an entire document
         """
         docs = {k : v for k, v in doc.items() if isinstance(v, dict)}
-        columns = ulist(self.columns if columns is None else columns) - self._ids
+        columns = ulist(self.columns if columns is None else columns)
         res = type(doc)({key : value for key, value in doc.items() if key in columns}) ## These are the only valid columns to the table
         if len(docs) == 0:
             return res
@@ -489,23 +506,24 @@ class sql_table(object):
         if self._pk:
             doc_id = self._id(res)
             ids = self._ids
-            db = self.inc().inc(**doc_id)
-            docs = db[::]
+            tbl = self.inc().inc(**doc_id)
+            docs = tbl[::]
             if len(docs) == 0:
                 with self.engine.connect() as conn: 
                     conn.execute(self.table.insert(),[res - ids])
                 if ids:    
-                    latest = db[0]
+                    latest = tbl[0]
                     doc.update(latest[ids])
             else:
-                db.deleted.insert(docs(deleted = datetime.datetime.now()) - ids)
+                deleted_docs = docs - ids
+                deleted_docs['deleted'] = datetime.datetime.now()
+                self.deleted.insert(deleted_docs)
                 if len(docs) == 1:
                     latest = docs[0]
                 else:
                     latest = docs.sort(ids)[-1]
-                    db.exc(*db._id(latest)).full_delete()
-                latest.update(res)
-                db.inc(db._id(latest)).update(**(latest-ids))
+                    tbl.exc(**tbl._id(latest)).full_delete()
+                self.inc(self._id(latest)).update(**(res-ids))
                 doc.update(latest[ids])
         else:
             with self.engine.connect() as conn:
@@ -523,19 +541,17 @@ class sql_table(object):
                 raise ValueError('no documents found to update %s'%edoc)
             else:
                 return self.insert_one(edoc)
-        elif n == 1:
-            existing.delete()
+        elif self._pk:
             return self.insert_one(edoc)
+        elif n == 1:
+            writer = self._writer(None, edoc, edoc)
+            wdoc = Dict({key: self._write(value, writer = writer) for key, value in edoc.items() if key in self.columns})                
+            existing.update(**(wdoc - self._ids))
+            res = existing[0]
+            res.update(edoc)
+            return res
         elif n > 1:
-            pk = self._pk
-            if pk:
-                if min([key in edoc for key in pk]): ## all keys have been specified, so the doubleton is an error
-                    existing.delete()
-                    return self.insert_one(edoc)
-                else:
-                    raise ValueError('cannot update without all primary keys %s in document'%pk)
-            else:
-                raise ValueError('multiple documents found matching '%pk)
+            raise ValueError('multiple documents found matching %s '%edoc)
                 
             
     def insert_many(self, docs):
@@ -716,8 +732,8 @@ class sql_table(object):
         if self._is_deleted():
             return self.distinct('deleted')
         else:        
-            db = 'deleted_' + self.db
-            res = get_sql_table(table = self.table, db = db, non_null = dict(deleted = datetime.datetime), server = self.server)
+            db_name = 'deleted_' + self.db
+            res = get_sql_table(table = self.table, db = db_name, non_null = dict(deleted = datetime.datetime), server = self.server)
             res.spec = self.spec
             res.order = self.order
             res.pk = None
