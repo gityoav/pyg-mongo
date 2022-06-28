@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy_utils.functions import create_database
-from pyg_base import cache, cfg_read, named_dict, as_list, dictattr, dictable, Dict, decode, is_dict, is_dictable, is_strs, is_str, is_int, ulist, encode, passthru
+from pyg_base import cache, cfg_read, named_dict, dumps, as_list, dictattr, dictable, Dict, decode, is_dict, is_dictable, is_strs, is_str, is_int, ulist, encode, passthru
 from pyg_mongo._writers import as_reader, as_writer
 from sqlalchemy import Table, Column, Integer, String, MetaData, Identity, Float, DATE, DATETIME, TIME, select, func, not_, and_, or_, desc, asc
 from sqlalchemy.orm import Session
@@ -20,24 +20,24 @@ def _server(server = None):
         raise ValueError('please provide server or set a "sql_server" in cfg file: from pyg_base import *; cfg = cfg_read(); cfg["sql_server"] = "server"; cfg_write(cfg)')
     return server
 
-def get_cstr(database = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):
+def get_cstr(db = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):
     server = _server(server)    
     if '//' in server:
         return server
     else:
         connection = {k:v for k,v in dict(driver = driver, trusted_connection = trusted_connection, user = user, password = password).items() if v is not None}
         params = '&'.join('%s=%s'%(k,v) for k,v in connection.items())        
-        return 'mssql+pyodbc://%(server)s/%(database)s%(params)s'%dict(server=server, database = database or 'master', params = '?' +params if params else '')
+        return 'mssql+pyodbc://%(server)s/%(db)s%(params)s'%dict(server=server, db = db or 'master', params = '?' +params if params else '')
 
-def get_engine(database = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):    
+def get_engine(db = 'master', server = None, driver = 'ODBC+Driver+17+for+SQL+Server', trusted_connection = 'yes', user = None, password = None):    
     if isinstance(server, sa.engine.base.Engine):
         return server
-    cstr = get_cstr(server=server, database = database, driver = driver, trusted_connection = trusted_connection , user = user, password = password)    
+    cstr = get_cstr(server=server, db = db, driver = driver, trusted_connection = trusted_connection , user = user, password = password)    
     e = sa.create_engine(cstr)
     try:
         sa.inspect(e)
     except Exception:
-        print('creating database... ', database)
+        print('creating db... ', db)
         create_database(cstr)
         e = sa.create_engine(cstr)       
     return e
@@ -46,20 +46,20 @@ _types = {str: String, int : Integer, float: Float, datetime.date: DATE, datetim
 _orders = {1 : asc, True: asc, 'asc': asc, asc : asc, -1: desc, False: desc, 'desc': desc, desc: desc}
 
 
-def get_sql_table(table, database = None, non_null = None, nullable = None, _id = None, schema = None, server = None, reader = None, writer = None, pk = None):
+def get_sql_table(table, db = None, non_null = None, nullable = None, _id = None, schema = None, server = None, reader = None, writer = None, pk = None, doc = None, mode = None):
     """
-    Creates a basic sql table. Can also be used to simply read table from the database
+    Creates a basic sql table. Can also be used to simply read table from the db
     """
     if isinstance(table, str):
         values = table.split('.')
         if len(values) == 2:
-            database = database or values[0]
-            if database != values[0]:
-                raise ValueError('database cannot be both %s and %s'%(values[0], database))
+            db = db or values[0]
+            if db != values[0]:
+                raise ValueError('db cannot be both %s and %s'%(values[0], db))
             table = values[1]
         elif len(values)>2:
-            raise ValueError('not sure how to translate this %s into a database.table format'%table)
-    e = get_engine(server = server, database = database)
+            raise ValueError('not sure how to translate this %s into a db.table format'%table)
+    e = get_engine(server = server, db = db)
     non_null = non_null or {}
     nullable = nullable or {}
     if isinstance(non_null, list):
@@ -71,7 +71,8 @@ def get_sql_table(table, database = None, non_null = None, nullable = None, _id 
     else:
         table_name = table.name
         schema = schema or table.schema
-        
+    if doc is True:
+        doc = _doc        
     meta = MetaData()
     i = sa.inspect(e)
     if not i.has_table(table_name, schema = schema):
@@ -94,10 +95,12 @@ def get_sql_table(table, database = None, non_null = None, nullable = None, _id 
                         cols.append(Column(i, DATETIME(timezone=True), nullable = False, server_default=func.now()))
                     else:
                         raise ValueError('not sure how to create an automatic item with column %s'%t)
+
         col_names = [col.name for col in cols]
         non_nulls = [Column(k, _types.get(t, t), nullable = False) for k, t in non_null.items() if k not in col_names]
-        nullables = [Column(k.lower(), _types.get(t, t)) for k, t in nullable.items() if k not in col_names]
-        cols = cols + non_nulls + nullables            
+        nullables = [Column(k.lower(), _types.get(t, t)) for k, t in nullable.items() if k not in col_names] 
+        docs = [Column(doc, String, nullable = True)] if doc is not None else []            
+        cols = cols + non_nulls + nullables + docs
         tbl = Table(table_name, meta, *cols)
         meta.create_all(e)
     else:
@@ -108,17 +111,17 @@ def get_sql_table(table, database = None, non_null = None, nullable = None, _id 
         if non_nulls is not None:
             for key in non_nulls:
                 if key.name not in cols.keys():
-                    raise ValueError('column %s does not exist in %s.%s'%(key, database, table_name))
+                    raise ValueError('column %s does not exist in %s.%s'%(key, db, table_name))
                 elif cols[key.name].nullable is True:
-                    raise ValueError('WARNING: You defined %s as a primary but it is nullable in %s.%s'%(key, database, table_name))
-    res = sql_table(table = tbl, database = database, server = server, engine = e, spec = None, selection = None, reader = reader, writer = writer, pk = pk)
+                    raise ValueError('WARNING: You defined %s as a primary but it is nullable in %s.%s'%(key, db, table_name))
+    res = sql_table(table = tbl, db = db, server = server, engine = e, spec = None, selection = None, reader = reader, writer = writer, pk = pk, doc = doc)
     return res
 
 def _tbl_insert_one(tbl, doc):
     res = {}
     for col in list(tbl.columns):
         res[col.name] = doc.get(col.name, None)
-    res[_doc] = json.dumps(doc)
+    res[_doc] = dumps(doc)
     tbl.insert(**res)
     return res
 
@@ -139,7 +142,7 @@ class sql_table(object):
     :Example:
     ---------
     >>> from pyg import * 
-    >>> t = get_sql_table(database = 'test', table = 'students', non_null = ['name', 'surname'], 
+    >>> t = get_sql_table(db = 'test', table = 'students', non_null = ['name', 'surname'], 
                           _id = dict(_id = int, created = datetime.datetime), 
                           nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float))
     >>> t = t.delete()
@@ -152,14 +155,14 @@ class sql_table(object):
     >>> t.inc(name = 'ayala').update(age = 17)
     
     """
-    def __init__(self, table, database = None, engine = None, server = None, spec = None, selection = None, order = None, reader = None, writer = None, pk = None, **_):
+    def __init__(self, table, db = None, engine = None, server = None, spec = None, selection = None, order = None, reader = None, writer = None, pk = None, doc = None, **_):
         """
         Parameters
         ----------
         table : sa.Table
             Our table
-        database : string, optional
-            Name of the database where table is.
+        db : string, optional
+            Name of the db where table is.
         engine : sa,Engine, optional
             The sqlalchemy engine
         server : str , optional
@@ -177,10 +180,10 @@ class sql_table(object):
 
         """
         if is_str(table):
-            table = get_sql_table(table = table, database = database, server = server)
+            table = get_sql_table(table = table, db = db, server = server)
             
         if isinstance(table, sql_table):
-            database = table.database if database is None else database
+            db = table.db if db is None else db
             engine = table.engine if engine is None else engine
             server = table.server if server is None else server
             spec = table.spec if spec is None else spec
@@ -189,10 +192,11 @@ class sql_table(object):
             reader = table.reader if reader is None else reader
             writer = table.writer if writer is None else writer
             pk = table.pk if pk is None else pk
+            doc = table.doc if doc is None else doc
             table = table.table
     
         self.table = table
-        self.database = database
+        self.db = db
         self.engine = engine
         self.server = server
         self.spec = spec
@@ -201,6 +205,7 @@ class sql_table(object):
         self.reader = reader
         self.writer = writer
         self.pk = pk
+        self.doc = doc
     
     def copy(self):
         return type(self)(self)
@@ -211,15 +216,27 @@ class sql_table(object):
     
     @property
     def _ids(self):
-        return [c.name for c in self.tbl.columns if c.server_default is not None]
+        return [c.name for c in self.table.columns if c.server_default is not None]
     
-    @property
-    def _id(self):
-        ids = self._ids
-        if len(ids) == 1:
-            return ids[0]
+    def _and(self, doc, keys):
+        if len(keys) == 1:
+            key = keys[0]
+            return self.table.c[key] == doc[key]
         else:
-            raise ValueError('what is the _id in %s?'%ids)
+            return sa.and_(*[self.table.c[i] == doc[i] for i in keys])
+
+    def _id(self, doc):
+        ### create a filter based on doc
+        ids = {i : doc[i] for i in self._ids if i in doc}
+        if len(ids):
+            return ids
+        pks = {i: doc[i] for i in self._pk if i in doc}
+        if len(pks):
+            return pks
+        keys = {i: doc[i] for i in doc if isinstance(doc[i], (int, str, datetime.datetime))}
+        if len(keys):
+            return keys
+        return {}
 
     @property
     def nullables(self):
@@ -287,7 +304,7 @@ class sql_table(object):
         ---------
         >>> from pyg import * 
         >>> import datetime
-        >>> self = get_sql_table(database = 'test', table = 'students', _id = dict(_id = int, created = datetime.datetime), non_null = ['name', 'surname'], nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float), pk = ['name', 'surname'])
+        >>> self = get_sql_table(db = 'test', table = 'students', _id = dict(_id = int, created = datetime.datetime), non_null = ['name', 'surname'], nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float), pk = ['name', 'surname'])
         >>> self.delete()
         >>> assert len(self) == 0         
         >>> self = self.insert(name = 'yoav', surname = 'git')
@@ -307,6 +324,18 @@ class sql_table(object):
 
         >>> self.insert(doc = dict(name = 'josh', surname = 'cohen'))
         type(self[5]['doc'])
+        
+        
+        from pyg import *
+        import datetime
+        db = partial(get_sql_table, db = 'test', table = 'students', 
+                     _id = dict(_id = int, created = datetime.datetime), 
+                     non_null = ['name', 'surname'], 
+                     nullable =  dict(doc = str, details = str, dob = datetime.date, age = int, grade = float), 
+                     pk = ['name', 'surname'], doc = True)        
+        db()        
+        self = sql_table(db = 'test', table = 'students')
+        doc = db_cell(add_, a = 2, b = 3, name = 'itamar', surname = 'date', db = db)()
         
         """
         if len(args) == 0 and len(kwargs) == 0:
@@ -345,26 +374,41 @@ class sql_table(object):
         res.selection = value
         return res
     
-            
+    def _dock(self, doc, ids = None):
+        ids = ids or self._ids
+        res = doc[self.doc]
+        for i in ids:
+            res[i] = doc[i]
+        return res
+
+    def docs(self, start = None, stop = None, step = None):
+        statement = self.statement()
+        if (is_int(start) and start < 0) or (is_int(stop) and stop < 0):
+            n = len(self)
+            start = n + start if is_int(start) and start < 0 else start                            
+            stop = n + stop if is_int(stop) and start < 0 else stop
+        if start and self.order is not None:
+            statement = statement.offset(start)
+            stop = stop if stop is None else stop - start
+        if stop is not None:
+            statement = statement.limit(1+stop)
+        res = list(self.engine.connect().execute(statement))
+        rows = res[slice(start, stop, step)]
+        rows = [self._read(row) for row in rows]
+        rs = dictable(rows, self.columns) ## we want to convert actually to columns...
+        return rs        
+                
     def __getitem__(self, value):
         if isinstance(value, (str, tuple, list)):
             return self.select(value)
         elif isinstance(value, slice):
-            statement = self.statement()
             start, stop, step = value.start, value.stop, value.step
-            if (is_int(start) and start < 0) or (is_int(stop) and stop < 0):
-                n = len(self)
-                start = n + start if is_int(start) and start < 0 else start                            
-                stop = n + stop if is_int(stop) and start < 0 else stop
-            if start and self.order is not None:
-                statement = statement.offset(start)
-                stop = stop if stop is None else stop - start
-            if stop is not None:
-                statement = statement.limit(1+stop)
-            res = list(self.engine.connect().execute(statement))
-            rows = res[slice(start, stop, step)]
-            rows = [self._read(row) for row in rows]
-            return dictable(rows, self.columns) ## we want to convert actually to columns...
+            res = self.docs(start = start, stop = stop, step = step)
+            if self.doc:
+                ids = self._ids
+                res = dictable([self._dock(row, ids = ids) for row in res])
+            return res
+        
         elif is_int(value):
             value = len(self) + value if value < 0 else value
             statement = self.statement()
@@ -373,20 +417,22 @@ class sql_table(object):
             else:
                 res = list(self.engine.connect().execute(statement.offset(value).limit(1)))[0]                
             res = self._read(res)
-            rtn = Dict(zip(self.columns, res))            
+            rtn = Dict(zip(self.columns, res))
+            if self.doc:
+                rtn = self._dock(rtn)
             return rtn    
 
-    def _enrich(self, row, columns = None):
+    def _enrich(self, doc, columns = None):
         """
-        We assume we receive a dict of key:values which go into the database.
+        We assume we receive a dict of key:values which go into the db.
         some of the values may in fact be an entire document
         """
-        docs = {k : v for k, v in row.items() if isinstance(v, dict)}
-        columns = self.columns if columns is None else columns
-        res = type(row)({key : value for key, value in row.items() if key in columns}) ## These are the only valid columns to the table
+        docs = {k : v for k, v in doc.items() if isinstance(v, dict)}
+        columns = ulist(self.columns if columns is None else columns) - self._ids
+        res = type(doc)({key : value for key, value in doc.items() if key in columns}) ## These are the only valid columns to the table
         if len(docs) == 0:
             return res
-        missing = {k : [] for k in columns if k not in row}
+        missing = {k : [] for k in columns if k not in doc}
         for doc in docs.values():
             for m in missing:
                 if m in doc:
@@ -399,9 +445,9 @@ class sql_table(object):
         return res
                 
     def insert_one(self, doc):
-        res = self._enrich(doc)
-        writer = self._writer(None, doc, res)
-        res = {key: self._write(value, writer = writer) for key, value in res.items()}
+        doc = self._enrich(doc)
+        writer = self._writer(None, doc, doc)
+        res = {key: self._write(value, writer = writer) for key, value in doc.items()}
         if self.pk is not None:
             where = {key: doc[key] for key in as_list(self.pk)}
             db = self.inc().inc(**where)
@@ -411,18 +457,44 @@ class sql_table(object):
                 docs['deleted'] = datetime.datetime.now()
                 db.deleted.insert(docs)
                 db.delete()
-            if len(docs) > 1:
-                print('INFO: there was disambiguity in the existing records, %s existed matching %s... deleting all'%(len(docs), where))
+                if len(docs) > 1:
+                    print('INFO: there was disambiguity in the existing records, %s existed matching %s... deleting all'%(len(docs), where))
         with self.engine.connect() as conn:
             conn.execute(self.table.insert(), [res])
-        return self
+        return doc
+    
+    
+    def update_one(self, doc, upsert = True):
+        edoc = {self.doc : doc} if self.doc else doc
+        edoc = self._enrich(edoc)
+        existing = self.inc().inc(**self._id(edoc))
+        n = len(existing)
+        if n == 0:
+            if upsert is False:
+                raise ValueError('no documents found to update %s'%edoc)
+            else:
+                return self.insert_one(edoc)
+        elif n == 1:
+            existing.delete()
+            return self.insert_one(edoc)
+        elif n > 1:
+            pk = self._pk
+            if pk:
+                if min([key in edoc for key in pk]): ## all keys have been specified, so the doubleton is an error
+                    existing.delete()
+                    return self.insert_one(edoc)
+                else:
+                    raise ValueError('cannot update without all primary keys %s in document'%pk)
+            else:
+                raise ValueError('multiple documents found matching '%pk)
+                
             
     def insert_many(self, docs):
         rs = dictable(docs)
         if len(rs) > 0:
             if self.pk is None:
                 columns = self.columns
-                rs = dictable([self._enrich(row, columns) for row in rs]) 
+                rs = dictable([self._enrich(row, columns) for row in rs]) - self._ids
                 rows = [{key: self._write(value, kwargs = row) for key, value in row.items()} for row in rs]
                 with self.engine.connect() as conn:
                     conn.execute(self.table.insert(), rows)
@@ -446,14 +518,27 @@ class sql_table(object):
         """
         rs = dictable(data = data, columns = columns, **kwargs) ## this allows us to insert multiple rows easily as well as pd.DataFrame
         return self.insert_many(rs)
-    
+
+    def find_one(self, doc = None, *args, **kwargs):
+        res = self.find(*args, **kwargs)
+        if doc:
+            filter_by_doc = self._id(doc)
+            if filter_by_doc is not None:
+                res = res.find(filter_by_doc)
+        if len(res) == 1:
+            return res
+        elif len(res) == 0:
+            raise ValueError('no document found for %s %s %s'%(doc, args, kwargs))
+        elif len(res) > 1:
+            raise ValueError('multiple documents found for %s %s %s'%(doc, args, kwargs))
+            
     
     def _reader(self, reader = None):
         return as_reader(self.reader if reader is None else reader)
 
     def _read(self, doc, reader = None):
         """
-        converts doc from Mongo into something we want
+        converts doc from db into something we want
         """
         reader = self._reader(reader)
         res = doc
@@ -479,12 +564,12 @@ class sql_table(object):
     def _write(self, doc, writer = None, kwargs = None):
         if not isinstance(doc, dict):
             return doc
-        res = doc.copy()
         writer = self._writer(writer, doc, kwargs = kwargs)
+        res = doc.copy()
         for w in as_list(writer):
             res = w(res)
         if isinstance(res, dict):
-            res = json.dumps(res)
+            res = dumps(res)
         return res
     
     def _select(self):
@@ -535,7 +620,7 @@ class sql_table(object):
 
     def delete(self, **kwargs):
         res = self.inc(**kwargs)
-        if self.pk is not None: ## we first copy the existing data out to deleted database
+        if self._pk: ## we first copy the existing data out to deleted db
             docs = res[::]
             docs['deleted'] = datetime.datetime.now()
             self.deleted.insert(docs)
@@ -568,18 +653,18 @@ class sql_table(object):
         return res
     
     def __repr__(self):
-        return '%(database)s.%(table)s, %(n)i records\n%(statement)s'%dict(database = self.database, table = self.table.name, n = len(self), statement = str(self.statement()))
+        return '%(db)s.%(table)s, %(n)i records\n%(statement)s'%dict(db = self.db, table = self.table.name, n = len(self), statement = str(self.statement()))
                 
     def _is_deleted(self):
-        return self.database.startswith('deleted_')
+        return self.db.startswith('deleted_')
 
     @property
     def deleted(self):
         if self._is_deleted():
             return self.distinct('deleted')
         else:        
-            database = 'deleted_' + self.database
-            res = get_sql_table(table = self.table, database = database, non_null = dict(deleted = datetime.datetime), server = self.server)
+            db = 'deleted_' + self.db
+            res = get_sql_table(table = self.table, db = db, non_null = dict(deleted = datetime.datetime), server = self.server)
             res.spec = self.spec
             res.order = self.order
             res.pk = None
@@ -591,9 +676,9 @@ class sql_table(object):
         :Returns:
         ---------
         tuple
-            A unique combination of the client addres, database name and collection name, identifying the collection uniquely.
+            A unique combination of the client addres, db name and collection name, identifying the collection uniquely.
 
         """
-        return ('server', self.server or _server()), ('db', self.database), ('table', self.table.name)
+        return ('server', self.server or _server()), ('db', self.db), ('table', self.table.name)
 
 

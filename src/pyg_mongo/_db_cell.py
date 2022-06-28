@@ -243,7 +243,7 @@ class db_cell(cell):
         except Exception:
             updated = db.update_one(ref - db._ids)
         for i in db._ids:
-            doc[i] = updated[i]
+            doc[i] = updated.get(i)
         get_GRAPH()[address] = doc
         return doc
                 
