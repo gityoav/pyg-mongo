@@ -1,5 +1,6 @@
 from pyg_base import wrapper, getargs, as_list, getcallargs, cell_item, logger
 from pyg_mongo._table import mongo_table
+from pyg_mongo._sql_table import get_sql_table
 from pyg_mongo._encoders import root_path
 from pyg_mongo._periodic_cell import periodic_cell
 from functools import partial
@@ -37,6 +38,12 @@ class cell_cache(wrapper):
     table: str
         name of table/collection where data is stored. If not provided, defaults to the function's name
 
+    url: str
+        location of mongodb server
+
+    server: str
+        location of sql server
+
     cell: cell
         type of cell to use when caching the data
 
@@ -67,9 +74,9 @@ class cell_cache(wrapper):
 
     
     """
-    def __init__(self, function = None, db = 'cache', table = None, pk = None, cell = periodic_cell, cell_kwargs = None, external = None):
+    def __init__(self, function = None, db = 'cache', table = None, url = None, server = None, pk = None, cell = periodic_cell, writer = None, cell_kwargs = None, external = None):
         cell_kwargs  = cell_kwargs or {}
-        super(cell_cache, self).__init__(function = function, pk = pk, db = db, table = table, cell = cell, cell_kwargs = cell_kwargs, external = external)
+        super(cell_cache, self).__init__(function = function, pk = pk, db = db, table = table, url = url, server = server, cell = cell, writer = writer, cell_kwargs = cell_kwargs, external = external)
         if hasattr(function, 'output'):
             self.output = function.output
 
@@ -96,7 +103,11 @@ class cell_cache(wrapper):
     
     @property
     def _db(self):
-        return partial(mongo_table, table = self._table, db = self.db, pk = self._pk)
+        if self.server is None:    
+            return partial(mongo_table, table = self._table, db = self.db, pk = self._pk, url = self.url, writer = self.writer)
+        else:
+            return partial(get_sql_table, table = self._table, db = self.db, pk = self._pk, server = self.server, writer = self.writer)
+            
     
     def _external_kwargs(self, args, kwargs):
         external = self._external
