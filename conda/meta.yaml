@@ -1,6 +1,6 @@
 package:
     name: pyg-mongo
-    version: 0.0.11
+    version: 0.0.12
 
 source:
     path: ../src
@@ -12,11 +12,11 @@ build:
 
 requirements:
     build:
-        - pyg-base          >=0.0.3
+        - pyg-base          >=0.0.16
         - pymongo           >=3.11.0
         - dnspython         >=2.1.0
     run:
-        - pyg-base          >=0.0.3
+        - pyg-base          >=0.0.16
         - pymongo           >=3.11.0
         - dnspython         >=2.1.0
         

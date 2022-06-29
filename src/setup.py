@@ -4,4 +4,4 @@ import platform
 from setuptools import setup, find_packages
 from distutils.core import Extension
 
-setup(name = 'pyg-mongo', version = '0.0.11', packages = find_packages(), python_requires = '>=3.7.')
+setup(name = 'pyg-mongo', version = '0.0.12', packages = find_packages(), python_requires = '>=3.7.')
