@@ -1,10 +1,8 @@
 from pyg_base._cell import _pk
 from pyg_base import is_dict, as_list, ulist, cache, is_strs, Dict, sort, decode
 from pyg_mongo._q import q, _id
-from pyg_mongo._writers import as_reader, as_writer
-#from pyg_base import passthru, decode, encode, is_str
-#from pyg_mongo._encoders import csv_write, parquet_write, npy_write, _csv, _npy, _npa, _parquet
-#from functools import partial
+from pyg_encoders._writers import as_reader, as_writer
+from bson import ObjectId
 
 _root = 'root'
 
@@ -218,7 +216,7 @@ class mongo_base_reader(object):
             writer = doc.get(_root)
         if writer is None:
             writer = self.writer
-        return as_writer(writer)
+        return as_writer(writer, unchanged = ObjectId)
             
 
     def _write(self, doc, writer = None):
