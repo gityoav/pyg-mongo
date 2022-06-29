@@ -1,4 +1,4 @@
-from pyg_base import as_list, is_strs, is_str, is_dict, is_int, dictable, sort, passthru
+from pyg_base import as_list, is_strs, is_str, is_dict, is_int, dictable
 from pyg_mongo._q import _id, _doc, q, _set
 from pyg_mongo._base_reader import mongo_base_reader, _items1
 import datetime
