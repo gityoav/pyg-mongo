@@ -7,6 +7,9 @@ __pycache__/
 # C extensions
 *.so
 
+# notepad backup files
+*.bak
+
 # Distribution / packaging
 .Python
 build/
