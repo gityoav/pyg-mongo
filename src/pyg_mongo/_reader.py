@@ -117,19 +117,21 @@ class mongo_reader(mongo_base_reader):
     def __repr__(self):
         n = len(self)
         if n>0:
-            return '%(t)s for %(c)s \n%(s)s %(p)s\ndocuments count: %(n)i \nfirst doc %(k)s'%dict(t = type(self), 
+            return '%(t)s for %(c)s \n%(s)s %(p)s\ndocuments count: %(n)i %(w)s\nfirst doc %(k)s'%dict(t = type(self), 
+                                                                                          w = '; writer = %s'%self.writer if is_str(self.writer) else '',
                                                                                           c = self.collection, 
                                                                                           s = self._spec, 
                                                                                           p = self._projection, 
                                                                                           n = n, 
                                                                                           k = self.keys())
         else:
-            return '%(t)s for %(c)s \n%(s)s %(p)s\ndocuments count: 0'%dict(t = type(self), 
+            return '%(t)s for %(c)s \n%(s)s %(p)s\ndocuments count: 0 %(w)s'%dict(t = type(self), 
+                                                                            w = '; writer = %s'%self.writer if is_str(self.writer) else '',
                                                                             c = self.collection, 
                                                                             s = self._spec, 
                                                                             p = self._projection)
             
-                
+
         
     def _item(self, item):
         if isinstance(item, slice):
@@ -181,4 +183,14 @@ class mongo_reader(mongo_base_reader):
                     self.deleted.collection.insert_many(docs)
                 self.collection.delete_many(spec)
         return self
+
+
         
+        
+        
+        
+        
+        
+    
+    
+    
