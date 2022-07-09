@@ -4,7 +4,8 @@ import datetime
 from collections import Counter
 
 from pyg_base import is_bool, try_back, replace, alphabet, ALPHABET, is_str, \
-    as_list, logger, tree_repr, NoneType, encode
+    as_list, logger, tree_repr, NoneType
+from pyg_encoders import encode
 
 from operator import and_, or_
 from functools import reduce
