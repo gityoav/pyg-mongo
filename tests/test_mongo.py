@@ -1,4 +1,5 @@
-from pyg_base import ulist, dictable,Dict, pd_read_parquet, eq
+from pyg_base import ulist, dictable,Dict, eq
+from pyg_encoders import pd_read_parquet
 from pyg_mongo import mongo_reader, mongo_cursor, q, mongo_table, mongo_pk_cursor
 from pyg_base import *
 import numpy as np; import pandas as pd
