@@ -1,4 +1,3 @@
-from pyg_base._cell import _pk
 from pyg_base import is_dict, as_list, ulist, cache, is_strs, Dict, sort
 
 from pyg_mongo._q import q, _id
@@ -6,7 +5,7 @@ from pyg_encoders import as_reader, as_writer, decode
 from bson import ObjectId
 
 _root = 'root'
-
+_pk = 'pk'
 
 def _dict1(keys):
     if keys is None or is_dict(keys):
