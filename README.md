@@ -1,14 +1,15 @@
 # pyg-mongo
 
 pip install from https://pypi.org/project/pyg-mongo/
-
+pyg-mongo is an evolution from ArcticDB available here: https://github.com/man-group/arctic.
 pyg-mongo introduces three new concepts that help you work with mongodb
 
-* The q query generating engine, making easy to filter mongo documents
-* The mongo_table makes read/write into mongo of complicated object seemless
+* The q query generation, making it easy to filter mongo documents.  
+* The mongo_cursor makes read/write into mongo of complicated object seemless
 * the mongo_table with pk specified, implements an audited primary-keyed table 
 
 ## The q-query
+For those of us who used TinyDB or even sqlalchemy, filtering mongodb for documents is a huge hassle.
 You can use q to write those complicated Mongo filter dicts:
 
 ```
@@ -27,28 +28,43 @@ $and:
     {"surname": {"$in": ["smith", "jones"]}}
 ```
 
-## The mongo_table
+## The mongo_cursor
 
-mongo_table uses q under the hood, making filtering easy. It also pre-process on both read and write to make:
+mongo_cursor uses q under the hood, making document filtering easy. The mongo_cursor also pre-process on both read and write to make writing 
 
-* number primitives (such as float32) that cannot be stored in MongoDB are converted to normal primitives
+* numpy objects/primitives easy to read/write
 * objects are jsonified/cast into bytes (pandas) so that the can be stored directly
-* allows the user to pre-save documents to csv/parquet/npy files while the metadata is saved in MongoDB
+* allows the user to pre-save documents to csv/parquet/npy/pickle files while the metadata is saved in MongoDB
 
 The post-reading process then makes the whole experience transparent to the user.
 
 ```
 >>> table = mongo_table('table','db').delete_many() # create table and drop any existing records
->>> doc = dict(a = np.array([1,2,3]), s = pd.Series([1,2,3]), df = pd.DataFrame(dict(a = [1,2], b = [3,4])))
+>>> doc = dict( a = np.array([1,2,3]), 
+                s = pd.Series([1,2,3]), 
+                df = pd.DataFrame(dict(a = [1,2], b = [3,4])))
 >>> doc = table.insert_one(doc)
 >>> len(table)
 1
 >>> read_doc = table[0]
 >>> read_doc['a']
 array([1, 2, 3])
-
+>>> read_doc['s']
+0    1
+1    2
+2    3
+dtype: int64
 ```
-Here is how we save into a directory...
+
+Saving the array/pd.DataFrame into MongoDB is not that useful though... 
+Once stored as a bson inside Mongo it cannot be queried easily and other applications cannot access it easily.
+mongo_cursor supports writing the actual data to files in pickle/npy/parquet/csv formats while the document itself sits inside Mongo. 
+This allows us to create applications where: 
+
+* ZeroMQ/Kafka saves tick data directly to npy files and 
+* These files are accessible to the user immediately and transparently through mongo_cursor.
+
+Splitting data & metadata in this ways allows us to use the strength of Mongo for queries while delegating low level operations to existing tried-and-tested file-based technology.
 
 ```
 >>> doc = dict(a = np.array([1,2,3]), s = pd.Series([1,2,3]), df = pd.DataFrame(dict(a = [1,2], b = [3,4])), root = 'c:/temp.parquet')
@@ -91,4 +107,5 @@ year|name |surname |pk                         |age|version|_id                 
 
 >>> assert len(table.exc(year = 2)) == 3
 ```
+
 There is more to pyg-mongo but this is a good taster.

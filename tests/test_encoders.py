@@ -17,7 +17,7 @@ def test_parquet_writer():
     assert eq(p[0]['data'], doc['data'])
     assert eq(t[0]['other'], doc['other'])
     d = t.read(0, passthru)    
-    assert d['data']['a'][0]['path'] == 'c:/temp/a/data/a/0.parquet'
+    assert d['data']['df']['path'] == 'c:/temp/a/data.dictable'
     assert d['other']['df']['path'] == 'c:/temp/a/other/df.parquet'
     p.drop()
     assert len(p) == 0
@@ -58,8 +58,7 @@ def test_root_path():
 
     root = 'c:/%name/%surname/%age/'
     doc = dict(name = 'yoav', surname = 'git')
-    with pytest.raises(ValueError):
-        root_path(doc, root)
+    assert root_path(doc, root) == 'c:/yoav/git/%age/'
 
 def test_parquet_encode():
     value = dict(a = 1)
@@ -75,6 +74,6 @@ def test_parquet_write():
     assert eq(pd_read_parquet('c:/temp/test/data.parquet'), s)
     c = parquet_write(dict(a = 1, other_data = s, db = db_with_root), root = 'c:/temp/test')
     assert eq(pd_read_parquet('c:/temp/test/other_data.parquet'), s)
-    c = parquet_write(dict(a = 1, data = s, db = db_no_root))
-    assert eq(c['data'], s)
+    with pytest.raises(OSError):
+        c = parquet_write(dict(a = 1, data = s, db = db_no_root))
 

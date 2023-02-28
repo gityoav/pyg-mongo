@@ -1,5 +1,5 @@
-from pyg_base import dictable, Dict, drange, pd_read_parquet, passthru, eq, dt
-from pyg_mongo import periodic_cell, mongo_table, mongo_pk_cursor, mongo_cursor, mongo_reader
+from pyg import dictattr, dictable, Dict, drange, pd_read_parquet, passthru, eq, dt
+from pyg_mongo import mongo_table, mongo_pk_cursor, mongo_cursor, mongo_reader
 from functools import partial
 import pytest
 import pandas as pd
@@ -127,12 +127,12 @@ def test_pk_cursor_raw():
 def test_pk_cursor_dates_to_parquet():
     db = partial(mongo_table, table = 'test', db =  'test', pk = 'a', writer = 'c:/temp/%a/%updated.parquet')    
     db().reset.drop()
-    c = periodic_cell(lambda a: pd.Series([1,2,3], drange(-2)), a = 'a', db = db)()
-    assert eq(pd_read_parquet(db().read(0, passthru)['data']['path']), c.data)
+    doc = dictattr(data = pd.Series([1,2,3], drange(-2)), a = 'a', updated = dt())
+    _ = db().update_one(doc)
+    assert eq(pd_read_parquet(db().read(0, passthru)['data']['path']), doc.data)
     db().reset.drop()
-    c = periodic_cell(lambda a: pd.Series([1,2,3], drange(-2)), a = 'a', db = db)()
-    c.updated = dt(2000)
-    c = c.save()
+    doc.updated = dt(2000)
+    _ = db().update_one(doc)
     assert db().read(0, passthru)['data']['path'] == 'c:/temp/a/20000101/data.parquet'
     db().reset.drop()
 
